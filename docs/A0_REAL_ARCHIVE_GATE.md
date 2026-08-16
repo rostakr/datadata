@@ -1,6 +1,8 @@
 # A0 — Real archive release gate
 
-Tento nástroj skládá existující A1–A7 kontrakty nad jedním skutečným Apple Messages `chat.db`. Nevytváří vlastní importer, normalizaci ani analytiku a nevolá LLM.
+> **Autorita:** tento dokument je operativní gate kontrakt podřízený kořenovému `PROJECT_SPEC.md`. Cílový repozitář je `rostakr/datadata`. Protože je veřejný, žádný skutečný `chat.db`, osobní text, příloha, lokální inventář ani real-archive report se nesmí commitovat nebo automaticky publikovat jako GitHub artifact.
+
+Tento nástroj skládá existující A1–A7 kontrakty nad jedním skutečným Apple Messages `chat.db`. Nevytváří vlastní importer, canonical model, analytiku ani AI interpretaci a nevolá LLM.
 
 ## Spuštění
 
@@ -13,7 +15,7 @@ python -m tools.real_archive_gate \
   --target ILA
 ```
 
-Pokud `ILA` není přesná hodnota uložená v canonical/source identitě, gate skončí `TARGET_NOT_RESOLVED` a do `real_archive_report.json` uloží inventář conversations. Potom spusťte nový workdir s autoritativním ID:
+Pokud `ILA` není přesná hodnota uložená v canonical/source identitě, gate skončí `TARGET_NOT_RESOLVED` a do `real_archive_report.json` uloží lokální inventář conversations. Potom spusťte nový workdir s autoritativním ID:
 
 ```bash
 python -m tools.real_archive_gate \
@@ -39,7 +41,15 @@ Přílohy lze doplnit explicitně:
 7. A4 přepočítá pouze zvolenou conversation; nezávislý A7 arithmetic/evidence oracle znovu ověří current deterministic result.
 8. A5 přečte uložené A4 candidates a A2/A3 message source read-only. Pro jeden candidate každého typu ověří bounded context, evidence dostupnost a membership/source provenance. Pokud A4 nevytvoří candidate, použije se pouze manuální provenance probe bez modelu.
 9. A6 načte skutečný canonical read model, vytvoří minimální production packet, doplní A2 source provenance, projde A7 packet oracle a A5 packet adapterem.
-10. Vznikne `real_archive_report.json` a log každého CLI kroku.
+10. Vznikne lokální `real_archive_report.json` a log každého CLI kroku.
+
+## Datové invariants
+
+- Zdroj před a po gate musí zůstat nezměněný v rozsahu kontrolovaném gate.
+- Unknown/missing hodnoty se nesmí materializovat jako domnělé `false`, `0`, incoming/outgoing nebo odhadnutý čas.
+- `is_from_me` zachovává tri-state semantics, pokud zdroj neposkytuje jistý směr.
+- Sender identity a source provenance se musí zachovat i při unknown direction.
+- Každý downstream packet musí být dohledatelný přes canonical IDs až ke source evidenci.
 
 ## Verdict
 
@@ -51,7 +61,7 @@ Běžná A5 redukce dlouhého kontextu na bounded selection je zaznamenána v A5
 
 ## Ochrana dat
 
-Nástroj neposílá zprávy žádné externí službě a report neukládá text zpráv. Inventář obsahuje lokální participant/source identity hodnoty potřebné k bezpečné identifikaci conversation, proto zůstává součástí lokálního workdiru a nemá se automaticky publikovat jako CI artifact.
+Nástroj neposílá zprávy žádné externí službě a report nemá ukládat text zpráv. Inventář obsahuje lokální participant/source identity hodnoty potřebné k bezpečné identifikaci conversation, proto zůstává výhradně v lokálním workdiru.
 
 ## Release hranice
 
