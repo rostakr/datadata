@@ -36,7 +36,7 @@ def default_workdir(
         instant = instant.replace(tzinfo=timezone.utc)
     stamp = instant.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     suffix = token or secrets.token_hex(4)
-    return base / ".analyzazprav" / "runs" / f"{stamp}-{suffix}"
+    return base / ".datadata" / "runs" / f"{stamp}-{suffix}"
 
 
 def _validate_args(args: argparse.Namespace) -> None:
