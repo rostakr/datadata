@@ -124,6 +124,8 @@ Gate kontroluje Streamlit exception stav, všech 7 hlavních tabů, page-level h
 - stale/missing provenance fail-closed regression contract,
 - screenshoty s osobním obsahem jsou opt-in.
 
+Lokální Streamlit runtime byl 2026-08-16 fyzicky potvrzen spuštěním A6 aplikace v browseru. Startup samotný však není acceptance důkaz issue #6; finální private real-data browser verdict musí vzniknout z `tools.a6_real_data_ui_qa.py`.
+
 ## Stav modulů
 
 ### A1 — Import dat
@@ -148,7 +150,7 @@ Gate kontroluje Streamlit exception stav, všech 7 hlavních tabů, page-level h
 
 ### A6 — Rozhraní
 
-**SYNTHETIC BROWSER VALIDATED + REAL-DATA DATA/PROVENANCE VALIDATED.** Desktop/iPhone browser matrix a Streamlit runtime smoke jsou zelené v CI; private real-data data-level interaction/evidence audit je `PASS`. Posledním bodem issue #6 zůstává fyzický browser render/click run nad private canonical DB v prostředí se Streamlitem.
+**SYNTHETIC BROWSER VALIDATED + REAL-DATA DATA/PROVENANCE VALIDATED + LOCAL STREAMLIT STARTUP CONFIRMED.** Desktop/iPhone browser matrix a Streamlit runtime smoke jsou zelené v CI; private real-data data-level interaction/evidence audit je `PASS`; A6 aplikace se lokálně fyzicky spustila. Posledním bodem issue #6 zůstává `PASS` privacy-safe real-data browser/interakční matice přes `tools.a6_real_data_ui_qa.py` nad private canonical DB.
 
 ### A7 — QA / validace
 
@@ -157,11 +159,12 @@ Gate kontroluje Streamlit exception stav, všech 7 hlavních tabů, page-level h
 ## Aktuální integrační fronta
 
 1. **Dokončit issue #6 — fyzický real-data A6 browser run**
+   - lokální Streamlit runtime blocker je odstraněn; A6 aplikace se fyzicky spouští,
    - spustit `tools/a6_real_data_ui_qa.py` nad private canonical `messages.sqlite`,
    - desktop + iPhone portrait + iPhone landscape,
    - potvrdit skutečný render/click flow, evidence/message/source drill-down a žádné Streamlit exceptions,
-   - DB/report/screenshoty nesmí být uploadovány do veřejného GitHubu,
-   - runtime byl znovu ověřen 2026-08-16: Playwright/Chromium je dostupný, `streamlit` není nainstalovaný a síť/DNS neumožňuje stažení repozitáře ani balíčku; blocker je tedy prostředí, nikoli A6 kód.
+   - požadovaný finální stav runneru je `PASS`,
+   - DB/report/screenshoty nesmí být uploadovány do veřejného GitHubu.
 
 2. **Attachment completeness**
    - pokud budou dodány fyzické Apple Messages `Attachments`, znovu spustit real-archive gate s `--attachments-root`,
@@ -195,4 +198,4 @@ A0 nesmí obejít, reinterpretovat ani ručně „přepsat“ negativní A7 nebo
 
 ## Hlavní priorita
 
-**Textový/datový/analytický vertical slice i private real-data interaction/evidence hranice jsou ověřené. Nejbližší release úkol je jediný: fyzický Streamlit browser QA nad private canonical databází; přílohy zůstávají samostatný externí data-quality blocker.**
+**Textový/datový/analytický vertical slice i private real-data interaction/evidence hranice jsou ověřené a lokální Streamlit startup je potvrzený. Nejbližší release úkol je jediný: získat `PASS` z fyzického `tools.a6_real_data_ui_qa.py` nad private canonical databází; přílohy zůstávají samostatný externí data-quality blocker.**
