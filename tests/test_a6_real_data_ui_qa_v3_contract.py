@@ -37,12 +37,20 @@ def test_target_app_keeps_target_process_local():
     assert "write_text" not in source
 
 
-def test_v3_uses_rendered_target_marker_and_privacy_safe_failure_stage():
+def test_v3_reports_privacy_safe_real_interaction_stages():
     source = (
         Path(__file__).resolve().parents[1]
         / "tools"
         / "a6_real_data_ui_qa_v3.py"
     ).read_text(encoding="utf-8")
-    assert 'get_by_text("conversation_id:", exact=False)' in source
-    assert 'f"conversation_id: `' not in source
-    assert "stage={failure_stage}" in source
+    for stage in (
+        "conversation_content",
+        "graphs_tab_click",
+        "graphs_content",
+        "finding_select",
+        "finding_evidence_button",
+        "selected_messages_content",
+        "analysis_content",
+    ):
+        assert stage in source
+    assert 'page.get_by_role("tab", name="Konverzace", exact=True).click' not in source
