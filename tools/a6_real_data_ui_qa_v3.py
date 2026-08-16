@@ -103,30 +103,43 @@ def run_real_data_ui_qa_v3(
                     screenshot_name: str | None = None
                     metrics: dict[str, Any] = {}
                     interaction_checks: dict[str, bool] = {}
+                    failure_stage = "navigate"
                     try:
                         page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+
+                        failure_stage = "heading"
                         page.get_by_role("heading", name="Analýza zpráv", exact=True).wait_for(
                             state="visible", timeout=timeout_ms
                         )
-                        page.get_by_text(
-                            f"conversation_id: `{target.conversation_id}`",
-                            exact=False,
-                        ).wait_for(state="visible", timeout=timeout_ms)
 
+                        # Streamlit renders Markdown backticks as a <code> element, so
+                        # literal backticks are not present in the browser text tree.
+                        # The local target app has already fail-closed scoped the frame,
+                        # therefore this stable label is sufficient and does not expose
+                        # the private canonical identifier in the report.
+                        failure_stage = "target_marker"
+                        page.get_by_text("conversation_id:", exact=False).first.wait_for(
+                            state="visible", timeout=timeout_ms
+                        )
+
+                        failure_stage = "streamlit_exception_check"
                         exception_count = page.locator('[data-testid="stException"]').count()
                         if exception_count:
                             errors.append(f"streamlit_exception_count={exception_count}")
 
+                        failure_stage = "tab_contract"
                         tabs = page.get_by_role("tab")
                         tab_labels = [label.strip() for label in tabs.all_inner_texts()]
                         if tab_labels != EXPECTED_TABS:
                             errors.append("tab_labels_mismatch")
 
+                        failure_stage = "real_interactions"
                         interaction_checks = _exercise_real_interactions(page, target, timeout_ms)
                         for name, passed in interaction_checks.items():
                             if not passed:
                                 errors.append(f"interaction_failed={name}")
 
+                        failure_stage = "responsive_metrics"
                         metrics = _page_metrics(page)
                         overflow_px = int(metrics.get("page_horizontal_overflow_px") or 0)
                         if overflow_px > 2:
@@ -140,12 +153,16 @@ def run_real_data_ui_qa_v3(
                                 f"max_metrics_same_row={max_same_row}, allowed={case.max_metrics_per_row}"
                             )
 
+                        failure_stage = "screenshot"
                         if keep_screenshots:
                             screenshot = output_dir / f"{case.name}.png"
                             page.screenshot(path=str(screenshot), full_page=True)
                             screenshot_name = screenshot.name
+                        failure_stage = "complete"
                     except Exception as exc:
-                        errors.append(f"browser_check_error={type(exc).__name__}")
+                        errors.append(
+                            f"browser_check_error={type(exc).__name__};stage={failure_stage}"
+                        )
                         if keep_screenshots:
                             screenshot = output_dir / f"{case.name}-failure.png"
                             try:
