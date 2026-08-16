@@ -35,3 +35,14 @@ def test_target_app_keeps_target_process_local():
     assert "ANALYZA_ZPRAV_CONVERSATION_ID" in source
     assert "conversation_id" in source
     assert "write_text" not in source
+
+
+def test_v3_uses_rendered_target_marker_and_privacy_safe_failure_stage():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "a6_real_data_ui_qa_v3.py"
+    ).read_text(encoding="utf-8")
+    assert 'get_by_text("conversation_id:", exact=False)' in source
+    assert 'f"conversation_id: `' not in source
+    assert "stage={failure_stage}" in source
