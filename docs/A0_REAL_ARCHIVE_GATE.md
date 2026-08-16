@@ -12,17 +12,19 @@ Z kořene repozitáře:
 python -m tools.real_archive_gate \
   --chat-db /cesta/k/chat.db \
   --workdir /cesta/k/novemu-prazdnemu-workdir \
-  --target ILA
+  --target EXACT_TARGET
 ```
 
-Pokud `ILA` není přesná hodnota uložená v canonical/source identitě, gate skončí `TARGET_NOT_RESOLVED` a do `real_archive_report.json` uloží lokální inventář conversations. Potom spusťte nový workdir s autoritativním ID:
+`EXACT_TARGET` nahraďte pouze přesnou hodnotou uloženou v canonical/source identitě lokálního archivu. Pokud target není přesná hodnota, gate skončí `TARGET_NOT_RESOLVED` a do lokálního `real_archive_report.json` uloží inventář conversations. Potom spusťte nový workdir s autoritativním ID:
 
 ```bash
 python -m tools.real_archive_gate \
   --chat-db /cesta/k/chat.db \
   --workdir /cesta/k/dalsimu-novemu-workdir \
-  --conversation-id 123
+  --conversation-id CANONICAL_CONVERSATION_ID
 ```
+
+`CANONICAL_CONVERSATION_ID` nahraďte lokálně zjištěným autoritativním canonical ID; konkrétní osobní identifikátory nepatří do veřejné dokumentace ani CI artefaktů.
 
 Přílohy lze doplnit explicitně:
 
@@ -62,6 +64,8 @@ Běžná A5 redukce dlouhého kontextu na bounded selection je zaznamenána v A5
 ## Ochrana dat
 
 Nástroj neposílá zprávy žádné externí službě a report nemá ukládat text zpráv. Inventář obsahuje lokální participant/source identity hodnoty potřebné k bezpečné identifikaci conversation, proto zůstává výhradně v lokálním workdiru.
+
+Veřejná dokumentace používá pouze neutrální placeholdery jako `EXACT_TARGET` a `CANONICAL_CONVERSATION_ID`; konkrétní hodnoty z osobního archivu se sem nesmí přepisovat.
 
 ## Release hranice
 
