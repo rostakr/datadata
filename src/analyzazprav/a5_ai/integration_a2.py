@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
 from typing import Sequence
@@ -16,6 +16,9 @@ def _split_distinct(value: object) -> tuple[str, ...]:
     if value in (None, ""):
         return ()
     return tuple(sorted({part for part in str(value).split(",") if part}))
+
+
+_UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 class A2SQLiteMessageSource:
@@ -46,11 +49,12 @@ class A2SQLiteMessageSource:
     def _to_utc_us(value: datetime) -> int:
         if value.tzinfo is None:
             raise ValueError("A2SQLiteMessageSource requires timezone-aware datetimes")
-        return int(round(value.astimezone(timezone.utc).timestamp() * 1_000_000))
+        delta = value.astimezone(timezone.utc) - _UNIX_EPOCH_UTC
+        return ((delta.days * 86_400 + delta.seconds) * 1_000_000) + delta.microseconds
 
     @staticmethod
     def _from_utc_us(value: int) -> datetime:
-        return datetime.fromtimestamp(int(value) / 1_000_000, tz=timezone.utc)
+        return _UNIX_EPOCH_UTC + timedelta(microseconds=int(value))
 
     @staticmethod
     def _object_exists(conn: sqlite3.Connection, name: str, object_type: str) -> bool:
