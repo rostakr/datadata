@@ -148,6 +148,8 @@ CREATE TABLE IF NOT EXISTS message_source (
 );
 CREATE INDEX IF NOT EXISTS idx_message_source_record_key
 ON message_source(source_type, source_record_key) WHERE source_record_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_message_source_import_record_key
+ON message_source(import_run_id, source_record_key) WHERE source_record_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_message_source_source_id
 ON message_source(source_type, source_message_id) WHERE source_message_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_message_source_message ON message_source(message_id);
