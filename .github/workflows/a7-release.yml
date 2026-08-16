@@ -20,9 +20,38 @@ jobs:
         run: pytest -q
       - name: Compile Python sources
         run: python -m compileall -q src a6 app.py tools/a7_release tools/real_archive_gate.py
+      - name: Start Streamlit smoke server
+        run: |
+          python -m streamlit run app.py \
+            --server.headless true \
+            --server.address 127.0.0.1 \
+            --server.port 8501 \
+            > "$RUNNER_TEMP/streamlit.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/streamlit.pid"
+      - name: Verify Streamlit health endpoint
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8501/_stcore/health | grep -q '^ok$'; then
+              echo "Streamlit smoke test PASS"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Streamlit failed to become healthy"
+          cat "$RUNNER_TEMP/streamlit.log"
+          exit 1
+      - name: Stop Streamlit smoke server
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/streamlit.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/streamlit.pid")" 2>/dev/null || true
+          fi
+          if [ -f "$RUNNER_TEMP/streamlit.log" ]; then
+            cat "$RUNNER_TEMP/streamlit.log"
+          fi
       - name: Write core report
         run: >-
-          python -c "import json,os,pathlib; pathlib.Path('a7-core-report.json').write_text(json.dumps({'schema_version':1,'module':'core','status':'PASS','verdict':'VALID','contract_sha':os.environ['GITHUB_SHA'],'checks':{'full_repository_pytest':True,'compileall':True},'issues':[]}, indent=2)+'\\n')"
+          python -c "import json,os,pathlib; pathlib.Path('a7-core-report.json').write_text(json.dumps({'schema_version':1,'module':'core','status':'PASS','verdict':'VALID','contract_sha':os.environ['GITHUB_SHA'],'checks':{'full_repository_pytest':True,'compileall':True,'streamlit_health':True},'issues':[]}, indent=2)+'\\n')"
       - uses: actions/upload-artifact@v4
         with:
           name: a7-core-report
