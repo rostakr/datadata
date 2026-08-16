@@ -12,15 +12,17 @@ Tento dokument je **operativní stav**, nikoliv druhá architektonická specifik
 
 ## Aktuální synteticky ověřený baseline
 
-- Ověřený SHA: `4d8723f110d1010410e79b90f558b99d61054e96`.
+- Ověřený `main` SHA: `2dba4b5835bc3f2cb6353790eba70147f90a3779`.
+- PR #20 je merged; issue #18 je completed.
 - A6 `full-suite-and-smoke` na tomto exact SHA: `success`.
 - A7 `current-main release gate` na tomto exact SHA: `success`.
 - `core = VALID`.
 - `A5 = VALID`.
 - `A6 = VALID`.
-- Aggregate exact-SHA verdict je `VALID` a release gate je zelený.
+- Aggregate exact-SHA release verdict je zelený.
+- A7 navíc ověřuje skutečný Streamlit startup/health v CI prostředí.
 
-Tento verdict prokazuje syntetický exact-current-checkout A1–A7 integrační gate a browser QA nad demo daty. Neprokazuje fyzickou dostupnost všech příloh konkrétního osobního archivu.
+Tento baseline prokazuje current-checkout testy, compile, A5/A6 provenance probes, Streamlit runtime smoke a browser viewport gate nad bezpečnými testovacími daty. Neprokazuje fyzickou dostupnost všech příloh konkrétního osobního archivu.
 
 ## Reálný Apple Messages archive gate
 
@@ -44,7 +46,7 @@ Real-archive pipeline byla 2026-08-16 znovu spuštěna lokálně nad skutečným
 
 ### Cílová canonical conversation
 
-Výběr byl proveden explicitním canonical `conversation_id`, nikoliv fuzzy/substring resolverem.
+Výběr byl proveden explicitním canonical conversation ID, nikoliv fuzzy/substring resolverem. Identifikátor samotný se do veřejné dokumentace nezapisuje.
 
 - memberships: `10 869`,
 - canonical messages: `10 869`,
@@ -59,17 +61,41 @@ Výběr byl proveden explicitním canonical `conversation_id`, nikoliv fuzzy/sub
 Zbývající quality warningy:
 
 - `3 107` attachment occurrences nelze fyzicky ověřit, protože nebyl dodán odpovídající `Attachments` root,
-- `21` unsupported records jsou orphan attachment rows; nejsou to ztracené message rows.
+- `21` unsupported records jsou orphan attachment rows; nejsou to ztracené message rows,
+- A5 context quality warning může vzniknout, pokud evidence přesáhne běžný message limit; evidence se nesmí tiše zahodit.
 
-Textová/canonical/analytická pipeline je tedy lossless pro message rows. Attachment completeness zůstává externí datový blocker, dokud nejsou dostupné fyzické attachment soubory.
+Textová/canonical/analytická pipeline je lossless pro message rows. Attachment completeness zůstává externí datový blocker, dokud nejsou dostupné fyzické attachment soubory.
+
+## Private real-data interaction/evidence audit
+
+Po merge PR #20 byl lokálně nad private canonical SQLite proveden data-level audit odpovídající ne-browser části issue #6. Report zůstal pouze lokální a obsahoval jen statusy/počty.
+
+Výsledek: `PASS`.
+
+- target memberships: `10 869`,
+- target canonical messages: `10 869`,
+- unknown timestamps: `0`,
+- deterministicky zúžené období: `5 435` message rows,
+- A4 metrics: available,
+- A4 findings: available,
+- evidence-bearing finding: resolvable,
+- current source provenance pro vybranou evidence: complete,
+- production A6→A5 packet provenance: complete,
+- A5 packet adapter: validated bez provider callu,
+- exact materialized evidence snapshot reconciliation: `PASS`,
+- syntetický provenance drift: `STALE`,
+- syntetická missing current evidence: `FAIL`,
+- semantic separation contract: `PASS` pro metric evidence / Pozorování / Interpretace / Vzorce / Alternativní vysvětlení / Nejistoty.
+
+Tento audit **nenahrazuje fyzický Streamlit browser run nad reálnou DB**. Potvrzuje však, že real-data selection, period filtering, A4/evidence/provenance a A5 packet hranice jsou na skutečných canonical datech funkční a fail-closed.
 
 ## Data-correctness invariants zahrnuté v baseline
 
 - tri-state `is_from_me` se zachovává; unknown se nesmí převést na incoming,
 - sender identity se zachovává nezávisle na neznámém směru,
 - UTC mikrosekundy používají přesnou integer/timedelta aritmetiku bez float-roundingu,
-- JSONL čtení nesmí rozdělit platný záznam na Unicode `U+2028/U+2029`,
-- provenance lookup v A2 používá index podle skutečného `(import_run_id, source_record_key)` kontraktu,
+- JSONL fyzické record framing musí zachovat `U+2028/U+2029` uvnitř message textu bez rozbití JSONL,
+- provenance lookup v A2 používá index podle `(import_run_id, source_record_key)`,
 - provenance a conversation membership se musí zachovat přes A2→A6→A5,
 - chybějící/stale provenance je fail-closed,
 - Ollama A5 preflight kontroluje server + přesný model přes `/api/tags` před `/api/chat`,
@@ -86,7 +112,17 @@ Na `main` je automatizovaný browser gate pro:
 
 Gate kontroluje Streamlit exception stav, všech 7 hlavních tabů, page-level horizontal overflow a responsive layout metrik `6 → 1 → 2`.
 
-Na `main` je rovněž `tools/a6_real_data_ui_qa.py`, který umí stejnou matici spustit **lokálně nad explicitně zadanou canonical SQLite databází** bez uploadu osobních dat. Screenshoty s osobním obsahem jsou opt-in a defaultně se nevytvářejí.
+`tools/a6_real_data_ui_qa.py` po PR #20 navíc podporuje lokální real-data interaction/evidence matici:
+
+- deterministický nebo explicitní local-only conversation target,
+- period check,
+- A4 metrics/findings,
+- evidence + source provenance,
+- A6→A5 packet validation bez provider callu,
+- browser flow přes `Konverzace`, `Grafy`, `Významná období`, `Vybrané zprávy`, `Analýza`,
+- privacy guard reportu,
+- stale/missing provenance fail-closed regression contract,
+- screenshoty s osobním obsahem jsou opt-in.
 
 ## Stav modulů
 
@@ -104,39 +140,40 @@ Na `main` je rovněž `tools/a6_real_data_ui_qa.py`, který umí stejnou matici 
 
 ### A4 — Analytický engine
 
-**VALIDATED on real archive.** Deterministické analytics + A7 oracle prošly.
+**VALIDATED on real archive.** Deterministické analytics + A7 oracle prošly; private interaction audit potvrzuje dostupné metrics/findings a resolvable evidence.
 
 ### A5 — AI analýza
 
-**VALIDATED for bounded-context/evidence/provenance path.** Live external/local model inference není součástí real-archive gate; Ollama readiness je nyní fail-closed přes explicitní preflight.
+**VALIDATED for bounded-context/evidence/provenance path.** Production packet adapter a source provenance prošly na reálných datech. Live Ollama inference není součástí real-archive gate; readiness je fail-closed přes explicitní preflight.
 
 ### A6 — Rozhraní
 
-**SYNTHETIC BROWSER VALIDATED + REAL-DATA PROVENANCE VALIDATED.** Desktop/iPhone browser matrix je zelená na demo datech; production packet/provenance probe je zelený na reálné canonical DB. Finální interaktivní browser run nad reálnou canonical DB zůstává posledním bodem issue #6.
+**SYNTHETIC BROWSER VALIDATED + REAL-DATA DATA/PROVENANCE VALIDATED.** Desktop/iPhone browser matrix a Streamlit runtime smoke jsou zelené v CI; private real-data data-level interaction/evidence audit je `PASS`. Posledním bodem issue #6 zůstává fyzický browser render/click run nad private canonical DB v prostředí se Streamlitem.
 
 ### A7 — QA / validace
 
-**VALID.** Independent oracles, exact-SHA release harness a real-archive reconciliation rozhodují fail-closed.
+**VALID.** Independent oracles, exact-SHA release harness, Streamlit runtime smoke a real-archive reconciliation rozhodují fail-closed.
 
 ## Aktuální integrační fronta
 
-1. **Dokončit issue #6 — real-data A6 browser run**
-   - spustit `tools/a6_real_data_ui_qa.py` nad canonical `messages.sqlite` vytvořenou real-archive gate,
+1. **Dokončit issue #6 — fyzický real-data A6 browser run**
+   - spustit `tools/a6_real_data_ui_qa.py` nad private canonical `messages.sqlite`,
    - desktop + iPhone portrait + iPhone landscape,
-   - ověřit `Konverzace`, `Vybrané zprávy`, `Analýza`, evidence drill-down a žádné Streamlit exceptions,
-   - osobní DB/report/screenshoty nesmí být uploadovány do veřejného GitHubu.
+   - potvrdit skutečný render/click flow, evidence/message/source drill-down a žádné Streamlit exceptions,
+   - DB/report/screenshoty nesmí být uploadovány do veřejného GitHubu.
+   - aktuální ChatGPT runtime má Playwright/Chromium, ale nemá Streamlit; pokus o instalaci selhává kvůli nedostupné síti/DNS.
 
 2. **Attachment completeness**
    - pokud budou dodány fyzické Apple Messages `Attachments`, znovu spustit real-archive gate s `--attachments-root`,
-   - bez attachments root zůstává tento stav explicitně `NEEDS_REVIEW`; nesmí se přepsat na `VALID` ručně.
+   - bez attachments root zůstává stav explicitně `NEEDS_REVIEW`; nesmí se ručně přepsat na `VALID`.
 
 3. **Live local A5 execution**
-   - po dostupnosti lokální Ollama instance a požadovaného modelu spustit explicitní live A5 analýzu přes nový preflight,
+   - po dostupnosti lokální Ollama instance a požadovaného modelu spustit explicitní live A5 analýzu přes preflight,
    - zachovat bounded context a provenance,
    - žádný cloud fallback.
 
 4. **Průběžná exact-SHA ochrana**
-   - každý další PR/push musí znovu projít full repository pytest, compileall, A5 probe, A6 provenance fixture, A6 browser gate a aggregate A7 exact-SHA verdict.
+   - každý další PR/push musí znovu projít full repository pytest, compile, Streamlit smoke, A5 probe, A6 provenance fixture, A6 browser gate a aggregate A7 exact-SHA verdict.
 
 ## Release pravidlo A0
 
@@ -158,4 +195,4 @@ A0 nesmí obejít, reinterpretovat ani ručně „přepsat“ negativní A7 nebo
 
 ## Hlavní priorita
 
-**Datový a analytický vertical slice je ověřený i na skutečném archivu. Nejbližší release úkol je dokončit lokální A6 browser QA nad touto canonical databází; přílohy zůstávají samostatný externí data-quality blocker.**
+**Textový/datový/analytický vertical slice i private real-data interaction/evidence hranice jsou ověřené. Nejbližší release úkol je jediný: fyzický Streamlit browser QA nad private canonical databází; přílohy zůstávají samostatný externí data-quality blocker.**
