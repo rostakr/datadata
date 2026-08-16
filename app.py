@@ -23,6 +23,7 @@ from a6.evidence import (
     load_current_message_provenance,
     reconcile_a5_evidence_ref,
 )
+from a6.local_runtime import configured_database
 from a6.responsive import install_responsive_contract
 from a6.semantics import candidate_semantics
 
@@ -34,7 +35,18 @@ _ORIGINAL_SIGNIFICANT_PERIODS = _legacy.significant_periods
 
 def source():
     global _CURRENT_DB_PATH
-    result = _ORIGINAL_SOURCE()
+    configured = configured_database()
+    if configured is None:
+        result = _ORIGINAL_SOURCE()
+    else:
+        _legacy.st.sidebar.header("Zdroj dat")
+        _legacy.st.sidebar.caption("Režim: canonical SQLite (lokální launcher)")
+        try:
+            messages, info, findings = _legacy.load_db(str(configured))
+        except _legacy.DataSourceError as exc:
+            _legacy.st.sidebar.error(str(exc))
+            _legacy.st.stop()
+        result = messages, info, findings, str(configured)
     _CURRENT_DB_PATH = result[3]
     return result
 
