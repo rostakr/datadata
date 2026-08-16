@@ -107,19 +107,20 @@ class A2StagingTests(unittest.TestCase):
                 (4, "004_explicit_local_time.sql"),
                 (5, "005_lossless_membership.sql"),
                 (6, "006_attachment_source_view.sql"),
+                (7, "007_message_source_import_record_key.sql"),
             ],
         )
         version = self.db.conn.execute(
             "SELECT value FROM schema_meta WHERE key='schema_version'"
         ).fetchone()["value"]
-        self.assertEqual(version, "6")
+        self.assertEqual(version, "7")
         self.assertIsNotNone(
             self.db.conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='view' AND name='analysis_attachment_sources'"
             ).fetchone()
         )
 
-    def test_v1_database_upgrades_to_v6_without_data_loss(self):
+    def test_v1_database_upgrades_to_v7_without_data_loss(self):
         legacy_path = Path(self.tmp.name) / "legacy.sqlite"
         conn = sqlite3.connect(legacy_path)
         conn.executescript((ROOT / "database" / "migrations" / "001_initial.sql").read_text(encoding="utf-8"))
@@ -189,12 +190,12 @@ class A2StagingTests(unittest.TestCase):
             rows = upgraded.conn.execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             ).fetchall()
-            self.assertEqual([row["version"] for row in rows], [1, 2, 3, 4, 5, 6])
+            self.assertEqual([row["version"] for row in rows], [1, 2, 3, 4, 5, 6, 7])
             self.assertEqual(
                 upgraded.conn.execute(
                     "SELECT value FROM schema_meta WHERE key='schema_version'"
                 ).fetchone()["value"],
-                "6",
+                "7",
             )
             report = upgraded.integrity_report()
             self.assertEqual(report["integrity"], "ok")
