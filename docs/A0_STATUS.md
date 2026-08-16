@@ -12,15 +12,15 @@ Tento dokument je **operativní stav**, nikoliv druhá architektonická specifik
 
 ## Aktuální synteticky ověřený baseline
 
-- Ověřený `main` SHA: `2dba4b5835bc3f2cb6353790eba70147f90a3779`.
-- PR #20 je merged; issue #18 je completed.
-- A6 `full-suite-and-smoke` na tomto exact SHA: `success`.
-- A7 `current-main release gate` na tomto exact SHA: `success`.
+- Ověřený `main` SHA: `09f57214e5c3481c8c797d4bfd3b44c75af97b58`.
+- Všech `7/7` push workflow pro tento exact SHA skončilo `success`.
+- A7 `release-verdict` check na tomto exact SHA: `success`.
 - `core = VALID`.
 - `A5 = VALID`.
 - `A6 = VALID`.
 - Aggregate exact-SHA release verdict je zelený.
-- A7 navíc ověřuje skutečný Streamlit startup/health v CI prostředí.
+- A7 ověřuje skutečný Streamlit startup/health v CI prostředí.
+- Launcher/runtime namespace je po opravě konzistentní s repozitářem `datadata`: výchozí derived workdir je `~/.datadata/runs/` a chování kryje regresní test.
 
 Tento baseline prokazuje current-checkout testy, compile, A5/A6 provenance probes, Streamlit runtime smoke a browser viewport gate nad bezpečnými testovacími daty. Neprokazuje fyzickou dostupnost všech příloh konkrétního osobního archivu.
 
@@ -160,8 +160,8 @@ Gate kontroluje Streamlit exception stav, všech 7 hlavních tabů, page-level h
    - spustit `tools/a6_real_data_ui_qa.py` nad private canonical `messages.sqlite`,
    - desktop + iPhone portrait + iPhone landscape,
    - potvrdit skutečný render/click flow, evidence/message/source drill-down a žádné Streamlit exceptions,
-   - DB/report/screenshoty nesmí být uploadovány do veřejného GitHubu.
-   - aktuální ChatGPT runtime má Playwright/Chromium, ale nemá Streamlit; pokus o instalaci selhává kvůli nedostupné síti/DNS.
+   - DB/report/screenshoty nesmí být uploadovány do veřejného GitHubu,
+   - runtime byl znovu ověřen 2026-08-16: Playwright/Chromium je dostupný, `streamlit` není nainstalovaný a síť/DNS neumožňuje stažení repozitáře ani balíčku; blocker je tedy prostředí, nikoli A6 kód.
 
 2. **Attachment completeness**
    - pokud budou dodány fyzické Apple Messages `Attachments`, znovu spustit real-archive gate s `--attachments-root`,
