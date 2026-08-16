@@ -3,6 +3,7 @@ name: A6 integration tests
 on:
   push:
     branches:
+      - 'main'
       - 'agent/a6-provenance-integration'
       - 'agent/a6-viewport-smoke'
   pull_request:
