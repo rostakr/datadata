@@ -2,84 +2,105 @@
 
 Aktualizováno: 2026-08-16
 
-Tento dokument je operativní A0 přehled. Autoritativní produktové a architektonické zásady jsou v `PROJECT_SPEC.md`.
+Tento dokument je **operativní stav**, nikoliv druhá architektonická specifikace. Autorita projektu je `PROJECT_SPEC.md` v kořeni repozitáře.
 
-## Ověřený baseline
+## Cílový repozitář
 
-- Cílový repozitář: `rostakr/datadata`.
-- Default branch: `main`.
-- Baseline commit před touto A0 změnou: `f58cdeeff494464f69fcc3713dcdec0db9258544`.
-- Přiložený projektový archiv a baseline `main` mají shodný Git tree SHA `6d11a237325e88eebb49fecea46bcd859e6f1330`.
-- Lokální core suite na stejném snapshotu: `241 passed` při vynechání `tests/test_a6_app.py`.
-- Kompletní lokální suite se v aktuálním A0 runtime zastaví při collection A6 testu, protože runtime nemá balík `streamlit`. To je environmentální blokace, nikoli potvrzená chyba A6.
-- GitHub Actions na baseline SHA evidoval pouze Pages deployment; A0 proto neoznačuje aktuální `main` za release-validovaný, dokud neproběhne vlastní A7 exact-SHA release gate.
+- Repository: `rostakr/datadata`
+- Default branch: `main`
+- Repozitář je veřejný: skutečný osobní archiv, zprávy, přílohy, lokální real-archive reporty a secrets se nesmí commitovat.
+
+## Ověřený code baseline před governance refresh
+
+- `b87f66d5a27046c84b24f9abf65b108614c695f5`
+- Merge PR #10: data-correctness hardening a release-gate hardening.
+- Zachován tri-state `is_from_me`; unknown se nesmí převést na incoming.
+- Sender identity se zachovává nezávisle na neznámém směru.
+- UTC mikrosekundy používají přesnou integer/timedelta aritmetiku bez float-roundingu.
+- A7 current-main release workflow se spouští pro každý PR a každý push do `main`.
+
+Governance/documentation commity po tomto baseline musí samy projít standardním A7 exact-SHA gate; existence dokumentace není release verdict.
+
+## Řídicí hierarchie
+
+1. `PROJECT_SPEC.md`
+2. canonical kontrakty v `docs/`
+3. A0/A7 release a validační dokumentace
+4. `docs/agents/*.md`
+5. ostatní dokumentace
+6. historické návrhy
+
+`docs/PROJECT_SPEC.md` je pouze pointer na root specifikaci a nesmí se rozvíjet jako paralelní master dokument.
 
 ## Stav modulů
 
 ### A1 — Import dat
 
-Implementace je na `main`. Další release práce musí zachovat read-only snapshot, source reconciliation a explicitní accounting každého importovaného záznamu.
+Implementace je na `main`. Povinné invariants: read-only source, explicitní source identity, accounting každého vstupního záznamu a reconciliation.
 
 ### A2 — Normalizace a databáze
 
-Canonical SQLite, lossless membership a provenance jsou na `main`. A2 je autoritativní zdroj normalizovaných dat pro další vrstvy.
+Canonical SQLite, lossless membership, provenance a přesná práce s časem jsou na `main`. A2 je autorita canonical modelu pro A3–A7.
 
 ### A3 — Zpracování a třídění
 
-Processing a participant resolution jsou na `main`. A3 nesmí zavádět paralelní message/participant model.
+Processing, sessions/threads a participant resolution jsou na `main`. A3 vytváří pouze derived struktury a nesmí zavést paralelní message/participant model.
 
 ### A4 — Analytický engine
 
-Deterministické metriky a kandidátní vzorce jsou na `main`. A4 výstupy nesmí být prezentovány jako psychologická interpretace.
+Deterministické metriky a kandidátní vzorce jsou na `main`. A4 nesmí maskovat interpretaci jako metriku.
 
 ### A5 — AI analýza
 
-Bounded context, evidence chain a provenance integrace jsou na `main`. AI musí pracovat pouze nad vybraným kontextem a doložitelnými kandidáty/metrikami.
+Bounded context, evidence chain a provenance integrace jsou na `main`. AI pracuje pouze nad relevantním kontextem a musí explicitně oddělit fakta, metriky, vzorce, interpretaci a nejistotu.
 
 ### A6 — Rozhraní
 
-Streamlit UI a evidence/provenance bridge jsou na `main`. A6 production packet musí fail-closed při chybějící nebo stale source provenance.
+Streamlit UI a evidence/provenance bridge jsou na `main`. Production read path musí fail-closed při chybějící nebo stale provenance a umožnit drill-down z výsledku na evidence/source.
 
 ### A7 — QA / validace
 
-Independent oracles a exact-SHA release harness jsou v repozitáři. Aktuální A0 priorita je ověřit, že se tento harness skutečně spouští v novém cílovém repozitáři a že výsledný SHA má `release_ready=true`.
+Independent oracles a exact-SHA release harness jsou v repozitáři. A7 je jediná vrstva oprávněná vydat strojový release verdict podle `docs/A7_RELEASE_GATE.md`.
 
 ## Aktuální integrační fronta
 
-1. **A0 governance + release wiring**
-   - přidat autoritativní `PROJECT_SPEC.md`,
-   - držet tento status dokument aktuální,
-   - zahrnout governance změny do A7 release workflow triggerů.
+1. **Governance synchronizace**
+   - udržet `PROJECT_SPEC.md` jako jedinou autoritu,
+   - agentní prompty sladit s aktuálním kódem a canonical kontrakty,
+   - nedovolit duplicitní master dokumenty.
 
-2. **A7 exact-SHA validace na `rostakr/datadata`**
-   - core full-repository pytest v CI,
+2. **Exact-SHA A7 validace každé změny**
+   - full repository pytest v CI,
    - compileall,
-   - A5 live evidence/provenance probe,
-   - A6 live A2→A6→A5 provenance fixture,
-   - aggregate verdict se stejným `GITHUB_SHA`,
-   - žádné prohlášení release-ready bez artefaktu s `release_ready=true`.
+   - A5 evidence/provenance probe,
+   - A6 A2→A6→A5 provenance fixture,
+   - aggregate verdict na stejném `GITHUB_SHA`,
+   - žádné `release-ready` tvrzení bez `release_ready=true`.
 
-3. **A0 real Apple archive gate**
-   - až po zeleném synthetic/current-main gate,
-   - spustit lokálně nad skutečným `chat.db`,
-   - zdroj před/po musí zůstat byte-identical,
-   - target conversation se vybírá pouze exact resolverem nebo explicitním `--conversation-id`,
-   - lokální reporty a inventáře se nepublikují do veřejného GitHubu.
+3. **Real Apple archive gate**
+   - spouštět lokálně nad skutečným `chat.db`,
+   - source před/po musí zůstat byte-identical,
+   - conversation vybírat exact resolverem nebo explicitním `--conversation-id`,
+   - žádné osobní reporty/inventáře do veřejného GitHubu.
 
-4. **A6 praktická UX matice**
+4. **A6 praktická UX validace**
    - desktop,
    - iPhone portrait,
    - iPhone landscape,
-   - skutečné zobrazení evidence a message drill-down,
-   - až nad release-validovaným SHA.
+   - evidence a message drill-down,
+   - provádět nad SHA, který prošel požadovanými datovými/QA gates.
 
 ## Release pravidlo A0
 
 A0 může označit SHA za integračně připravený pouze tehdy, když:
 
-- všechny povinné A7 komponenty jsou `VALID`,
-- všechny reporty mají přesně stejný `contract_sha`,
+- povinné A7 komponenty jsou `VALID`,
+- reporty mají stejný `contract_sha`,
 - aggregate verdict obsahuje `release_ready=true`,
-- neexistuje nevyřešená data-integrity nebo provenance chyba.
+- neexistuje nevyřešená data-integrity/provenance chyba.
 
-Skutečný osobní archiv je samostatná praktická validační vrstva a nikdy se nenahrazuje syntetickým CI fixturem.
+A0 nesmí sám obejít, reinterpretovat nebo ručně „přepsat“ negativní A7 verdict.
+
+## Hlavní priorita
+
+**Dokončit a udržovat jeden auditovatelný end-to-end vertical slice; nerozmnožovat funkcionalitu na úkor správnosti, provenance nebo validačního řetězce.**
