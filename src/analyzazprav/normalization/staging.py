@@ -71,6 +71,22 @@ class StagingIngestResult:
     conversation_relations: int = 0
 
 
+_UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _datetime_to_unix_us(value: datetime) -> int:
+    delta = value.astimezone(timezone.utc) - _UNIX_EPOCH_UTC
+    return ((delta.days * 86_400 + delta.seconds) * 1_000_000) + delta.microseconds
+
+
+def canonical_direction(is_from_me: object) -> str:
+    if is_from_me is True or is_from_me == 1:
+        return "outgoing"
+    if is_from_me is False or is_from_me == 0:
+        return "incoming"
+    return "unknown"
+
+
 def iso_utc_to_unix_us(value: str | None) -> int | None:
     if not value:
         return None
@@ -81,8 +97,7 @@ def iso_utc_to_unix_us(value: str | None) -> int | None:
         return None
     if parsed.tzinfo is None:
         return None
-    parsed = parsed.astimezone(timezone.utc)
-    return int(parsed.timestamp() * 1_000_000)
+    return _datetime_to_unix_us(parsed)
 
 
 def canonical_timestamp_precision(source_precision: str | None) -> str:
@@ -303,9 +318,9 @@ def ingest_a1_staging_bundle(
             if not source_message_id or not source_record_key:
                 raise ValueError("A1 message requires source_message_id and source_record_key")
 
-            is_from_me = bool(record.get("is_from_me"))
+            direction = canonical_direction(record.get("is_from_me"))
             sender_handle = record.get("sender_handle")
-            if is_from_me:
+            if direction == "outgoing":
                 sender_id = db.get_or_create_participant(
                     identity_type="self",
                     identity_value="local",
@@ -379,7 +394,7 @@ def ingest_a1_staging_bundle(
                     conversation_id=primary_conversation_id,
                     sender_id=sender_id,
                     sent_at_utc_us=sent_at_utc_us,
-                    direction="outgoing" if is_from_me else "incoming",
+                    direction=direction,
                     message_type=message_type,
                     text=None if text is None else str(text),
                     service=None if service is None else str(service),
