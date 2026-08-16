@@ -1,124 +1,189 @@
 # PROJECT_SPEC — Analýza zpráv
 
-Tento dokument je autoritativní specifikace projektu. Při konfliktu s dílčí dokumentací, historickým kódem nebo návrhem má přednost tento soubor.
+Tento soubor je **jediná autoritativní projektová a architektonická specifikace** repozitáře `rostakr/datadata`.
 
-## Hlavní cíl
+Při konfliktu platí pořadí autority:
 
-Vytvořit lokální, spolehlivý a auditovatelný systém pro import, zpracování, statistickou analýzu a AI interpretaci dlouhodobé osobní komunikace, primárně iMessage.
+1. `PROJECT_SPEC.md`,
+2. explicitní canonical kontrakty v `docs/`,
+3. A0/A7 release a validační dokumentace,
+4. agentní prompty v `docs/agents/`,
+5. ostatní dokumentace,
+6. historický kód nebo starší návrhy.
+
+Žádný agent nesmí vytvořit paralelní architekturu, datový model nebo novou autoritativní specifikaci mimo toto pořadí.
+
+## 1. Hlavní cíl
+
+Vytvořit lokální, spolehlivý a auditovatelný systém pro import, zpracování, statistickou analýzu a AI interpretaci dlouhodobé osobní komunikace, primárně Apple iMessage.
 
 Výsledný systém musí umožnit:
 
-- importovat kompletní historii komunikace,
-- zachovat vazbu na původní zdrojová data,
-- normalizovat zprávy a přílohy do jednotného modelu,
-- analyzovat komunikaci programově,
-- detekovat významné změny a období,
-- použít AI pouze nad relevantním výběrem dat,
-- zobrazit výsledky v jednoduchém lokálním UI,
-- dohledat každý významný závěr zpět ke konkrétním zprávám a metrikám.
+- import kompletní historie komunikace,
+- zachování vazby na původní zdrojová data,
+- normalizaci zpráv a příloh do jednoho canonical modelu,
+- deterministické programové analýzy,
+- detekci významných změn a období,
+- AI interpretaci pouze nad relevantním bounded contextem,
+- jednoduché lokální UI,
+- dohledání každého významného závěru ke konkrétním zprávám, metrikám a zdrojové provenance.
 
 Základní pipeline:
 
-`RAW DATA → NORMALIZED DATA → DERIVED DATA → ANALYTICS → RELEVANT CONTEXT → AI ANALYSIS → UI → QA`
+`RAW → NORMALIZED → DERIVED → ANALYTICS → RELEVANT CONTEXT → AI ANALYSIS → UI → QA`
 
-## Závazné principy
+## 2. Závazné principy
 
-### 1. Data mají přednost před interpretací
+### Data před interpretací
 
-Nejdříve musí být správná data, potom správné metriky a až následně AI interpretace. AI nesmí nahrazovat deterministické výpočty, které lze provést programově.
+Nejdříve správná data, potom správné metriky, až následně AI interpretace. AI nesmí nahrazovat deterministické výpočty.
 
-### 2. Zdrojová data se nemění
+### RAW je read-only
 
-Originální importovaná data jsou read-only. Veškeré čištění, deduplikace, klasifikace a transformace probíhají pouze v odvozených vrstvách.
+Originální importovaná data se nikdy nemění. Transformace probíhají pouze v odvozených vrstvách.
 
-### 3. Žádná data se nesmí tiše ztratit
+### Žádná tichá ztráta dat
 
-Každý importovaný záznam musí být úspěšně zpracován, označen jako duplicita, označen jako nepodporovaný, nebo zaznamenán jako chyba. Musí být možné provést reconciliation mezi vstupem a výsledkem importu.
+Každý vstupní záznam musí skončit jako zpracovaný, duplicita, explicitně nepodporovaný nebo chyba. Reconciliation se musí uzavřít.
 
-### 4. Provenance je povinná
+### Provenance je povinná
 
-Každá normalizovaná zpráva musí být dohledatelná ke svému původnímu zdroji. Analytické a AI výsledky musí být dohledatelné ke zprávám nebo metrikám, ze kterých vznikly.
+Každá canonical zpráva musí být dohledatelná ke zdroji. Každá odvozená metrika a každý významný AI závěr musí být dohledatelný ke canonical entitám a zdrojové evidenci.
 
-### 5. Jednotný datový model
+### Jeden canonical model
 
-Všechny importéry převádějí data do společného modelu:
+Základní model je společný pro celý projekt:
 
 `conversation → participant → message → attachment → timestamp → metadata`
 
-Jednotlivé moduly nesmí vytvářet vlastní paralelní datové modely.
+Moduly nesmí vytvářet paralelní message/participant/conversation modely.
 
-### 6. Local-first
+### Local-first a minimální disclosure
 
-Citlivá komunikace má zůstávat lokálně. Externím AI službám se neposílá kompletní archiv automaticky. Posílá se pouze minimální relevantní kontext potřebný pro konkrétní analýzu.
+Osobní archiv zůstává lokálně. Externí AI nesmí automaticky dostávat celý archiv; pouze minimální relevantní kontext pro konkrétní analýzu.
 
-### 7. Jednoduchost před složitostí
+### Jednoduchost a auditovatelnost
 
-Preferovat řešení, které je jednodušší, lépe testovatelné, auditovatelné, deterministické, snadno opravitelné a snadno rozšiřitelné. Nevytvářet zbytečné frameworky, abstrakce nebo služby.
+Preferovat jednodušší, deterministické, testovatelné a snadno opravitelné řešení před frameworkovou nebo infrastrukturní složitostí.
 
-### 8. Navazovat na existující implementaci
+### Navazovat na existující implementaci
 
-Před každou změnou nejprve zjistit aktuální stav projektu. Nevytvářet paralelní implementaci funkcionality, která už v projektu existuje. Existující funkční kód se rozšiřuje nebo opravuje.
+Před změnou vždy ověřit aktuální `main`, existující kód, kontrakty a testy. Neimplementovat druhou verzi funkce, která již existuje.
 
-### 9. Hotové znamená funkční
+### Hotové = implementované + integrované + ověřené
 
-Za dokončenou práci se nepovažuje návrh, pseudokód, placeholder, TODO, mock implementace nebo neotestovaný kód. Dokončená funkce musí být implementovaná, propojená a ověřená.
+Za hotové se nepovažuje návrh, pseudokód, TODO, mock, nepropojená komponenta ani neotestovaný kód.
 
-### 10. Testování je součást implementace
+### Testování je součást implementace
 
-Každá důležitá změna musí mít odpovídající test nebo validační mechanismus. Před dokončením úkolu musí být spuštěny relevantní testy.
+Každá významná změna musí mít test nebo validační mechanismus. Relevantní testy a A7 gate jsou součást Definition of Done.
 
-## Datové vrstvy
+## 3. Datové vrstvy
 
-- **L0 RAW** — neměnný zdrojový archiv a jeho identita.
-- **L1 NORMALIZED** — společný canonical model se source provenance.
-- **L2 DERIVED** — deterministicky odvozené sessions, threads, klasifikace a pomocné struktury.
+- **L0 RAW** — neměnný zdrojový archiv a identita vstupních záznamů.
+- **L1 NORMALIZED** — canonical SQLite model s explicitní provenance.
+- **L2 DERIVED** — sessions, threads, participant resolution, klasifikace a další deterministicky odvozené struktury.
 - **L3 ANALYSIS** — metriky, kandidátní vzorce, relevantní kontext, AI výstupy a QA evidence.
 
-## Moduly
+Přechod mezi vrstvami musí být auditovatelný. Odvozená vrstva nesmí zpětně měnit předchozí vrstvu.
 
-- **A0 — Hlavní koordinace**: architektura, integrační pořadí, kontrakty, release stav.
-- **A1 — Import dat**: read-only ingest, staging, source reconciliation.
-- **A2 — Normalizace a databáze**: canonical model, provenance, integrity.
-- **A3 — Zpracování a třídění**: sessions, threads, participant resolution a odvozené struktury.
-- **A4 — Analytický engine**: deterministické metriky a kandidátní vzorce.
-- **A5 — AI analýza**: bounded relevant context, evidence provenance, interpretace.
-- **A6 — Rozhraní**: lokální UI nad canonical/analysis read modely.
-- **A7 — QA / validace**: nezávislé oracles, reconciliation, release gates.
+## 4. Čas a směr zpráv
 
-A0 koordinuje architekturu a integraci. A1–A7 pracují pouze ve své oblasti a respektují společná rozhraní.
+Časová a směrová informace je datově kritická.
 
-## MVP
+- canonical čas musí zachovat přesnost bez float-roundingu,
+- UTC převody musí být deterministické,
+- lokální čas a timezone musí být explicitní, pokud jsou známy,
+- `is_from_me` je tri-state, pokud zdroj nedává jistou hodnotu; `unknown` se nesmí tiše převést na incoming nebo outgoing,
+- neznámý směr nesmí zničit nebo přepsat identitu sendera.
 
-MVP musí obsahovat alespoň:
+## 5. Moduly A0–A7
 
-- import iMessage,
-- normalizaci do canonical SQLite,
-- úplnou provenance a reconciliation,
-- výběr kontaktu / conversation a časového období,
-- zobrazení skutečných zpráv,
-- základní komunikační metriky,
-- response latency,
-- initiation,
-- detekci významných období / změn,
-- AI analýzu pouze nad relevantním kontextem,
-- evidence odkazy z AI výstupů,
-- QA a fail-closed validační brány.
+- **A0 — Hlavní koordinace:** architektura, priority, kontrakty, integrační pořadí, stav a release rozhodování.
+- **A1 — Import dat:** read-only ingest, staging, source identity a reconciliation.
+- **A2 — Normalizace a databáze:** canonical model, timestamps, membership, provenance a integrita.
+- **A3 — Zpracování a třídění:** sessions, threads, participant resolution a další derived struktury.
+- **A4 — Analytický engine:** deterministické metriky a kandidátní změny/vzorce.
+- **A5 — AI analýza:** bounded context, evidence chain, interpretace a explicitní nejistota.
+- **A6 — Rozhraní:** lokální UI nad canonical a analysis read modely, evidence drill-down.
+- **A7 — QA / validace:** nezávislé oracles, reconciliation, exact-SHA release gates a regresní ochrana.
 
-## Analytická pravidla
+Každý modul musí mít jasné `INPUT → PROCESSING → OUTPUT` a respektovat vlastnictví kontraktů sousedních modulů.
 
-Vždy rozlišovat:
+## 6. Analytický standard
 
-- **fakt** — přímo přítomný ve zdrojových datech,
-- **metrika** — programově vypočítaná hodnota,
+Výstupy vždy rozlišují:
+
+- **fakt** — přímo přítomný ve zdrojových/canonical datech,
+- **metrika** — deterministicky vypočítaná hodnota,
 - **vzorec** — opakovaný nebo statisticky významný jev,
 - **interpretace** — možné vysvětlení,
-- **nejistota** — nedostatek dat pro spolehlivý závěr.
+- **nejistota** — omezení dat nebo alternativní vysvětlení.
 
-Interpretace se nesmí prezentovat jako prokázaný fakt. AI nemá diagnostikovat osobnost, psychické poruchy nebo motivaci člověka jako jistou skutečnost.
+Interpretace nesmí být prezentována jako prokázaný fakt. AI nesmí diagnostikovat osobnost, psychickou poruchu nebo motivaci člověka jako jistou skutečnost.
 
-## Priorita rozhodování
+## 7. AI pravidla
 
-Při konfliktu mezi cíli používat toto pořadí:
+A5 nesmí standardně analyzovat celý archiv. Kontext musí být připraven deterministickými vrstvami a omezen na potřebný rozsah.
+
+Významný AI závěr musí mít:
+
+1. pozorování,
+2. evidence,
+3. interpretaci,
+4. alternativní vysvětlení,
+5. míru jistoty,
+6. strojově dohledatelné reference na zprávy/metriky/provenance.
+
+Bez evidence je závěr pouze nedoložená hypotéza a nesmí být prezentován jako výsledek systému.
+
+## 8. MVP / end-to-end vertical slice
+
+Prioritou je jeden plně funkční scénář před množstvím izolovaných funkcí:
+
+1. načíst iMessage data,
+2. provést read-only import a source reconciliation,
+3. normalizovat do canonical SQLite,
+4. zachovat kompletní provenance,
+5. vybrat conversation/kontakt a časové období,
+6. zobrazit skutečné zprávy,
+7. vypočítat základní metriky včetně response latency a initiation,
+8. detekovat kandidátní významná období,
+9. vytvořit relevantní bounded context,
+10. provést AI analýzu s evidence chain,
+11. zobrazit výsledek a source drill-down v UI,
+12. projít A7 exact-SHA validací.
+
+## 9. QA a release pravidlo
+
+A7 je nezávislá validační vrstva, ne kosmetický testovací doplněk.
+
+SHA lze označit jako release-ready pouze pokud:
+
+- povinné testy a validační komponenty jsou `VALID`,
+- reporty odkazují na stejný `contract_sha`,
+- nejsou nevyřešené integrity/provenance chyby,
+- aggregate verdict obsahuje `release_ready=true`,
+- real-archive gate, pokud je pro daný milník požadován, proběhne lokálně bez publikace osobních dat.
+
+CI syntetické fixtures nenahrazují praktickou validaci skutečného Apple Messages archivu.
+
+## 10. Bezpečnost osobních dat
+
+Repozitář `rostakr/datadata` je veřejný. Proto se do GitHubu nesmí commitovat:
+
+- skutečný `chat.db`,
+- osobní zprávy,
+- soukromé přílohy,
+- lokální inventáře skutečného archivu,
+- reporty obsahující osobní text nebo identifikátory,
+- tokeny, API klíče nebo jiné secrets.
+
+Testy musí používat syntetická nebo bezpečně anonymizovaná data.
+
+## 11. Priorita rozhodování
+
+Při konfliktu cílů platí:
 
 1. správnost dat,
 2. úplnost dat,
@@ -131,17 +196,18 @@ Při konfliktu mezi cíli používat toto pořadí:
 9. UX,
 10. vizuální vzhled.
 
-## Definition of Done
+## 12. Definition of Done
 
 Změna je hotová pouze tehdy, když:
 
-1. navazuje na existující implementaci,
-2. zachovává canonical model a provenance,
-3. nemůže tiše ztratit data,
-4. má test nebo validační mechanismus,
-5. relevantní testy prošly,
-6. integrační A7 gate nehlásí regresi,
-7. významný závěr lze zpětně doložit daty nebo metrikou.
+1. vychází z aktuálního stavu `rostakr/datadata:main`,
+2. nerozbíjí vlastnictví A0–A7 ani canonical kontrakty,
+3. zachovává RAW read-only pravidlo a provenance,
+4. nemůže tiše ztratit nebo přepsat neznámá data,
+5. má odpovídající test nebo validaci,
+6. relevantní lokální/CI testy prošly,
+7. A7 exact-SHA gate nehlásí regresi,
+8. dokumentace byla aktualizována, pokud se změnil kontrakt nebo architektura.
 
 ## Hlavní zásada
 
