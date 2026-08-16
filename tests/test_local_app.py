@@ -28,7 +28,7 @@ def test_default_workdir_is_private_and_unique_under_home(tmp_path: Path):
     when = datetime(2026, 8, 16, 18, 0, tzinfo=timezone.utc)
     workdir = local_app.default_workdir(home=tmp_path, now=when, token="abcd1234")
 
-    assert workdir == tmp_path / ".analyzazprav" / "runs" / "20260816T180000.000000Z-abcd1234"
+    assert workdir == tmp_path / ".datadata" / "runs" / "20260816T180000.000000Z-abcd1234"
     assert local_app._repo_root() not in workdir.parents
 
 
