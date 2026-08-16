@@ -5,7 +5,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from a6.a5_bridge import a5_available, run_local_a5
+from a6.a5_bridge import a5_available, check_local_a5_provider, run_local_a5
 from a6.data import analysis_packet, demo_messages
 
 
@@ -13,15 +13,17 @@ def test_a5_available_returns_boolean():
     assert isinstance(a5_available(), bool)
 
 
-def test_run_local_a5_uses_packet_adapter_and_returns_execution(monkeypatch):
+def test_run_local_a5_uses_packet_adapter_preflight_and_returns_execution(monkeypatch):
     package = ModuleType("analyzazprav")
     a5 = ModuleType("analyzazprav.a5_ai")
     providers = ModuleType("analyzazprav.a5_ai.providers")
+    calls = []
 
     class FakePacketSource:
         @classmethod
         def from_packet(cls, packet):
             assert packet["schema_version"] == 1
+            calls.append("packet")
             return cls()
 
     class FakeBuilder:
@@ -29,9 +31,23 @@ def test_run_local_a5_uses_packet_adapter_and_returns_execution(monkeypatch):
             assert isinstance(source, FakePacketSource)
 
     class FakeProvider:
-        def __init__(self, model_name, *, base_url):
+        def __init__(self, model_name, *, base_url, preflight_timeout_seconds=5.0):
             assert model_name == "test-model"
             assert base_url == "http://localhost:11434"
+            self.model_name = model_name
+            self.base_url = base_url
+
+        def preflight(self):
+            calls.append("preflight")
+            return SimpleNamespace(
+                to_dict=lambda: {
+                    "provider": "ollama",
+                    "base_url": self.base_url,
+                    "requested_model": self.model_name,
+                    "available_models": [self.model_name],
+                    "ready": True,
+                }
+            )
 
     class FakeResult:
         def to_dict(self):
@@ -44,6 +60,7 @@ def test_run_local_a5_uses_packet_adapter_and_returns_execution(monkeypatch):
             assert cache is None
 
         def analyze(self, request, candidate):
+            calls.append("analyze")
             assert request == "request"
             assert candidate == "candidate"
             return SimpleNamespace(
@@ -87,6 +104,62 @@ def test_run_local_a5_uses_packet_adapter_and_returns_execution(monkeypatch):
         "context_hash": "hash-1",
         "error": None,
         "result": {"summary": "ok", "overall_confidence": 0.9},
+    }
+    assert calls.index("preflight") < calls.index("analyze")
+
+
+def test_check_local_a5_provider_returns_structured_ready_status(monkeypatch):
+    package = ModuleType("analyzazprav")
+    a5 = ModuleType("analyzazprav.a5_ai")
+    providers = ModuleType("analyzazprav.a5_ai.providers")
+
+    class ProviderError(RuntimeError):
+        pass
+
+    class ProviderUnavailable(ProviderError):
+        pass
+
+    class ProviderTimeout(ProviderError):
+        pass
+
+    class FakeProvider:
+        def __init__(self, model_name, *, base_url, preflight_timeout_seconds):
+            assert preflight_timeout_seconds == 2.0
+            self.model_name = model_name
+            self.base_url = base_url.rstrip("/")
+
+        def preflight(self):
+            return SimpleNamespace(
+                to_dict=lambda: {
+                    "provider": "ollama",
+                    "base_url": self.base_url,
+                    "requested_model": self.model_name,
+                    "available_models": [self.model_name],
+                    "ready": True,
+                }
+            )
+
+    providers.OllamaProvider = FakeProvider
+    providers.ProviderError = ProviderError
+    providers.ProviderUnavailable = ProviderUnavailable
+    providers.ProviderTimeout = ProviderTimeout
+
+    monkeypatch.setitem(sys.modules, "analyzazprav", package)
+    monkeypatch.setitem(sys.modules, "analyzazprav.a5_ai", a5)
+    monkeypatch.setitem(sys.modules, "analyzazprav.a5_ai.providers", providers)
+
+    status = check_local_a5_provider(
+        model_name="test-model",
+        base_url="http://localhost:11434/",
+        timeout_seconds=2.0,
+    )
+    assert status == {
+        "status": "ready",
+        "provider": "ollama",
+        "model": "test-model",
+        "base_url": "http://localhost:11434",
+        "available_models": ["test-model"],
+        "error": None,
     }
 
 

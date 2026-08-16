@@ -1,5 +1,5 @@
 from .base import AIProvider, ProviderError, ProviderTimeout, ProviderUnavailable
-from .ollama import OllamaProvider
+from .ollama import OllamaPreflight, OllamaProvider
 from .static import SequenceProvider, StaticProvider
 
 __all__ = [
@@ -7,6 +7,7 @@ __all__ = [
     "ProviderError",
     "ProviderTimeout",
     "ProviderUnavailable",
+    "OllamaPreflight",
     "OllamaProvider",
     "StaticProvider",
     "SequenceProvider",

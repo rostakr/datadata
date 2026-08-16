@@ -15,6 +15,67 @@ def a5_available() -> bool:
     return True
 
 
+def check_local_a5_provider(
+    *,
+    model_name: str,
+    base_url: str = "http://localhost:11434",
+    timeout_seconds: float = 5.0,
+) -> dict[str, Any]:
+    """Check local Ollama availability without sending any A5 evidence context."""
+
+    try:
+        from analyzazprav.a5_ai.providers import (
+            OllamaProvider,
+            ProviderError,
+            ProviderTimeout,
+            ProviderUnavailable,
+        )
+    except ImportError as exc:
+        raise A5Unavailable("A5 modul není v aktuálním checkoutu nainstalovaný.") from exc
+
+    provider = OllamaProvider(
+        model_name,
+        base_url=base_url,
+        preflight_timeout_seconds=timeout_seconds,
+    )
+    try:
+        result = provider.preflight()
+    except ProviderTimeout as exc:
+        return {
+            "status": "timeout",
+            "provider": "ollama",
+            "model": model_name,
+            "base_url": base_url.rstrip("/"),
+            "error": str(exc),
+        }
+    except ProviderUnavailable as exc:
+        return {
+            "status": "unavailable",
+            "provider": "ollama",
+            "model": model_name,
+            "base_url": base_url.rstrip("/"),
+            "error": str(exc),
+        }
+    except ProviderError as exc:
+        return {
+            "status": "invalid_response",
+            "provider": "ollama",
+            "model": model_name,
+            "base_url": base_url.rstrip("/"),
+            "error": str(exc),
+        }
+
+    payload = result.to_dict()
+    return {
+        "status": "ready",
+        "provider": payload["provider"],
+        "model": payload["requested_model"],
+        "base_url": payload["base_url"],
+        "available_models": payload["available_models"],
+        "error": None,
+    }
+
+
 def run_local_a5(
     packet: Mapping[str, Any],
     *,
@@ -27,7 +88,9 @@ def run_local_a5(
     """Run A5 explicitly through local Ollama only.
 
     The A5 packet adapter validates membership and source provenance before the
-    provider is constructed. No cloud fallback is attempted.
+    provider is constructed. The provider then verifies the local Ollama server
+    and exact requested model via ``/api/tags`` before any evidence prompt can be
+    sent to ``/api/chat``. No cloud fallback is attempted.
     """
 
     try:
@@ -44,7 +107,7 @@ def run_local_a5(
     except ImportError as exc:
         raise A5Unavailable("A5 modul není v aktuálním checkoutu nainstalovaný.") from exc
 
-    # All contract validation happens before OllamaProvider/network work.
+    # All packet/provenance validation happens before local provider/network work.
     source = A6PacketMessageSource.from_packet(packet)
     candidate = candidate_from_a6_packet(packet)
     request = request_from_a6_packet(
@@ -53,9 +116,12 @@ def run_local_a5(
         mode=AnalysisMode(mode),
         user_question=user_question or None,
     )
+    provider = OllamaProvider(model_name, base_url=base_url)
+    # Fail closed before /api/chat. /api/tags carries no evidence or message text.
+    provider.preflight()
     analyzer = AIAnalyzer(
         context_builder=ContextBuilder(source),
-        provider=OllamaProvider(model_name, base_url=base_url),
+        provider=provider,
         cache=None,
     )
     execution = analyzer.analyze(request, candidate)

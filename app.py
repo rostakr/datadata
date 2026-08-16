@@ -11,6 +11,7 @@ from typing import Any
 
 from a6 import app_legacy as _legacy
 from a6.app_legacy import *  # noqa: F401,F403
+from a6.a5_bridge import A5Unavailable, check_local_a5_provider
 from a6.data import analysis_packet as _base_analysis_packet
 from a6.evidence import (
     FAIL,
@@ -179,6 +180,56 @@ def significant_periods(findings, conversation_frame, period_start, period_end, 
     )
 
 
+def _render_local_provider_preflight() -> None:
+    """Expose a zero-evidence Ollama readiness check in the A6 sidebar."""
+
+    if not _legacy.a5_available():
+        return
+    with _legacy.st.sidebar.expander("Lokální AI / Ollama"):
+        _legacy.st.caption(
+            "Kontrola čte pouze lokální seznam modelů z /api/tags. Zprávy ani A5 evidence se při ní neposílají."
+        )
+        model_name = _legacy.st.text_input(
+            "Model pro kontrolu",
+            "qwen3:8b",
+            key="a6_preflight_model",
+        ).strip()
+        base_url = _legacy.st.text_input(
+            "Ollama URL pro kontrolu",
+            "http://localhost:11434",
+            key="a6_preflight_url",
+        ).strip()
+        if _legacy.st.button("Ověřit lokální AI", key="a6_preflight_button"):
+            if not model_name or not base_url:
+                _legacy.st.session_state.a6_provider_preflight = {
+                    "status": "invalid_input",
+                    "error": "Model i Ollama URL jsou povinné.",
+                }
+            else:
+                try:
+                    _legacy.st.session_state.a6_provider_preflight = check_local_a5_provider(
+                        model_name=model_name,
+                        base_url=base_url,
+                    )
+                except A5Unavailable as exc:
+                    _legacy.st.session_state.a6_provider_preflight = {
+                        "status": "unavailable",
+                        "error": str(exc),
+                    }
+
+        status = _legacy.st.session_state.get("a6_provider_preflight")
+        if not status:
+            _legacy.st.caption("Stav zatím nebyl ověřen.")
+        elif status.get("status") == "ready":
+            _legacy.st.success(f"Ollama je připravena; model {status.get('model')} je dostupný.")
+        elif status.get("status") == "timeout":
+            _legacy.st.warning(f"Ollama neodpověděla včas: {status.get('error')}")
+        elif status.get("status") == "invalid_response":
+            _legacy.st.error(f"Ollama vrátila neplatnou odpověď: {status.get('error')}")
+        else:
+            _legacy.st.error(str(status.get("error") or "Lokální AI není připravena."))
+
+
 # Replace the exact global call sites used inside the mature UI module.
 _legacy.source = source
 _legacy.analysis_packet = analysis_packet
@@ -189,7 +240,11 @@ _legacy.significant_periods = significant_periods
 
 def main():
     install_responsive_contract(_legacy.st)
-    return _legacy.main()
+    result = _legacy.main()
+    # Preserve the mature A6 sidebar widget order; diagnostics are appended after
+    # the existing source/contact controls rather than inserted ahead of them.
+    _render_local_provider_preflight()
+    return result
 
 
 if __name__ == "__main__":
