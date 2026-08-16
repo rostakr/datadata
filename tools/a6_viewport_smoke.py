@@ -23,12 +23,13 @@ class ViewportCase:
     name: str
     width: int
     height: int
+    max_metrics_per_row: int
 
 
 VIEWPORTS = (
-    ViewportCase("desktop", 1440, 900),
-    ViewportCase("iphone-portrait", 390, 844),
-    ViewportCase("iphone-landscape", 844, 390),
+    ViewportCase("desktop", 1440, 900, 6),
+    ViewportCase("iphone-portrait", 390, 844, 1),
+    ViewportCase("iphone-landscape", 844, 390, 2),
 )
 
 
@@ -44,6 +45,20 @@ def _page_metrics(page: Any) -> dict[str, Any]:
           const body = document.body;
           const streamlit = document.querySelector('[data-testid="stAppViewContainer"]');
           const content = streamlit || body;
+          const metricNodes = Array.from(document.querySelectorAll('[data-testid="stMetric"]')).slice(0, 6);
+          const metricBoxes = metricNodes.map((node) => {
+            const rect = node.getBoundingClientRect();
+            return {left: rect.left, top: rect.top, width: rect.width, height: rect.height};
+          });
+          const rowCounts = [];
+          for (const box of metricBoxes) {
+            let row = rowCounts.find((item) => Math.abs(item.top - box.top) <= 4);
+            if (!row) {
+              row = {top: box.top, count: 0};
+              rowCounts.push(row);
+            }
+            row.count += 1;
+          }
           return {
             viewport_width: window.innerWidth,
             viewport_height: window.innerHeight,
@@ -51,6 +66,9 @@ def _page_metrics(page: Any) -> dict[str, Any]:
             body_scroll_width: body.scrollWidth,
             content_scroll_width: content ? content.scrollWidth : null,
             page_horizontal_overflow_px: Math.max(root.scrollWidth, body.scrollWidth) - window.innerWidth,
+            metric_count: metricBoxes.length,
+            metric_row_counts: rowCounts.map((item) => item.count),
+            max_metrics_same_row: rowCounts.length ? Math.max(...rowCounts.map((item) => item.count)) : 0,
           };
         }
         """
@@ -72,7 +90,7 @@ def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) 
 
     output_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {
-        "contract": "a6-browser-viewport-v1",
+        "contract": "a6-browser-viewport-v2",
         "url": url,
         "expected_tabs": EXPECTED_TABS,
         "cases": [],
@@ -122,6 +140,15 @@ def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) 
                     # Nested dataframes/tab strips may scroll; the page itself must not.
                     if overflow_px > 2:
                         errors.append(f"page_horizontal_overflow_px={overflow_px}")
+
+                    metric_count = int(metrics["metric_count"] or 0)
+                    if metric_count != 6:
+                        errors.append(f"metric_count={metric_count}, expected=6")
+                    max_same_row = int(metrics["max_metrics_same_row"] or 0)
+                    if max_same_row > case.max_metrics_per_row:
+                        errors.append(
+                            f"max_metrics_same_row={max_same_row}, allowed={case.max_metrics_per_row}"
+                        )
 
                     screenshot = output_dir / f"{_safe_name(case.name)}.png"
                     page.screenshot(path=str(screenshot), full_page=True)
