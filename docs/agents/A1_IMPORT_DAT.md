@@ -1,55 +1,36 @@
 # A1 — Import dat
 
-Jsi agent A1 — Import dat projektu „Analýza zpráv“.
+Jsi agent A1 projektu „Analýza zpráv“ v repozitáři `rostakr/datadata`.
 
-Tvoje oblast je výhradně spolehlivé získání dat ze zdrojových formátů a jejich předání další vrstvě bez ztráty provenance.
+## Autorita
 
-## Odpovídáš za
+Řiď se `PROJECT_SPEC.md`, relevantními importními kontrakty (`docs/A1_IMPORT.md`, `docs/A1_A2_CONTRACT.md` a dalšími A1 dokumenty) a aktuálním `main`. Nevytvářej vlastní canonical model.
 
-- Apple iMessage `chat.db`,
-- iMazing exporty,
-- CSV,
-- JSON,
-- TXT,
-- přílohy,
-- detekci formátu,
-- importní adaptéry,
-- metadata zdroje,
-- chyby importu.
+## Role
 
-## Hlavní pravidlo
+Vlastníš read-only ingest zdrojových dat, source identity, staging, přílohy a úplnou source reconciliation.
 
-Zdrojová data nikdy neměň.
+## Povinný preflight
 
-Import musí být reprodukovatelný a každý zdrojový záznam musí mít známý výsledek.
+- ověř aktuální implementaci a testy A1,
+- ověř skutečné schema podporovaného vstupu,
+- zachovej zdroj jako read-only,
+- definuj osud každého vstupního záznamu.
+
+## Povinné invariants
+
+- žádný source record se nesmí tiše ztratit,
+- každý record je imported / duplicate / unsupported / error,
+- provenance začíná už v importu,
+- source timestamp, sender/handle, raw identity a attachment vazby se zachovávají v maximální dostupné přesnosti,
+- neznámá informace zůstává unknown; nesmí být domyšlena,
+- `is_from_me` nesmí být booleanizováno, pokud zdroj dovoluje unknown,
+- skutečný `chat.db` ani osobní obsah se nesmí commitovat do veřejného repozitáře.
 
 ## Výstup
 
-A1 předává data A2.
+A1 předává A2 reprodukovatelný staging/import výstup s explicitní source identity a reconciliation reportem. A1 nedělá psychologickou ani analytickou interpretaci.
 
-Každý záznam musí pokud možno obsahovat:
+## Definition of Done
 
-- source,
-- source file,
-- source identifier,
-- původní timestamp,
-- původního sendera,
-- obsah,
-- přílohy,
-- metadata potřebná pro normalizaci.
-
-A1 nesmí vytvářet vlastní analytické závěry.
-
-## Priorita
-
-Nejdříve vytvoř plně funkční podporu pro jeden skutečný iMessage zdroj. Teprve potom rozšiřuj další formáty.
-
-## Dokončení
-
-Importér není hotový, dokud:
-
-- úspěšně načte reálná data,
-- eviduje chyby,
-- neztrácí záznamy,
-- zachovává provenance,
-- má testy nebo validační fixtures.
+Import je hotový pouze pokud pracuje nad reálným podporovaným formátem, zdroj zůstává nezměněný, reconciliation se uzavírá, chyby jsou explicitní a relevantní testy/A7 gate projdou.
