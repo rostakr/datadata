@@ -10,16 +10,29 @@ Tento dokument je **operativní stav**, nikoliv druhá architektonická specifik
 - Default branch: `main`
 - Repozitář je veřejný: skutečný osobní archiv, zprávy, přílohy, lokální real-archive reporty a secrets se nesmí commitovat.
 
-## Ověřený code baseline před governance refresh
+## Aktuální synteticky ověřený baseline
 
-- `b87f66d5a27046c84b24f9abf65b108614c695f5`
-- Merge PR #10: data-correctness hardening a release-gate hardening.
-- Zachován tri-state `is_from_me`; unknown se nesmí převést na incoming.
-- Sender identity se zachovává nezávisle na neznámém směru.
-- UTC mikrosekundy používají přesnou integer/timedelta aritmetiku bez float-roundingu.
+- Ověřený SHA: `324a9237f54e1a3f3b29cffb0f4a169c22905825`.
+- GitHub Actions run: `A7 current-main release gate` #21 (`31955109743`).
+- Workflow conclusion: `success`.
+- `core = VALID`.
+- `A5 = VALID`.
+- `A6 = VALID`.
+- Všechny component `contract_sha` odpovídají přesně `324a9237f54e1a3f3b29cffb0f4a169c22905825`.
+- `issues = []`.
+- `overall_verdict = VALID`.
+- `release_ready = true`.
+
+Tento verdict prokazuje definovaný syntetický exact-current-checkout A1–A7 integrační gate. **Neprokazuje úplnost ani kompatibilitu konkrétního skutečného Apple Messages archivu.**
+
+### Data-correctness invariants zahrnuté v baseline
+
+- tri-state `is_from_me` se zachovává; unknown se nesmí převést na incoming,
+- sender identity se zachovává nezávisle na neznámém směru,
+- UTC mikrosekundy používají přesnou integer/timedelta aritmetiku bez float-roundingu,
+- provenance a conversation membership se musí zachovat přes A2→A6→A5,
+- chybějící/stale provenance je fail-closed,
 - A7 current-main release workflow se spouští pro každý PR a každý push do `main`.
-
-Governance/documentation commity po tomto baseline musí samy projít standardním A7 exact-SHA gate; existence dokumentace není release verdict.
 
 ## Řídicí hierarchie
 
@@ -64,43 +77,45 @@ Independent oracles a exact-SHA release harness jsou v repozitáři. A7 je jedin
 
 ## Aktuální integrační fronta
 
-1. **Governance synchronizace**
-   - udržet `PROJECT_SPEC.md` jako jedinou autoritu,
-   - agentní prompty sladit s aktuálním kódem a canonical kontrakty,
-   - nedovolit duplicitní master dokumenty.
-
-2. **Exact-SHA A7 validace každé změny**
-   - full repository pytest v CI,
-   - compileall,
-   - A5 evidence/provenance probe,
-   - A6 A2→A6→A5 provenance fixture,
-   - aggregate verdict na stejném `GITHUB_SHA`,
-   - žádné `release-ready` tvrzení bez `release_ready=true`.
-
-3. **Real Apple archive gate**
-   - spouštět lokálně nad skutečným `chat.db`,
+1. **Real Apple archive gate — nejvyšší priorita**
+   - spustit lokálně nad skutečným požadovaným `chat.db`,
    - source před/po musí zůstat byte-identical,
-   - conversation vybírat exact resolverem nebo explicitním `--conversation-id`,
-   - žádné osobní reporty/inventáře do veřejného GitHubu.
+   - ověřit A1 source reconciliation,
+   - ověřit A2 canonical integrity/provenance,
+   - ověřit A3 processing a participant resolution,
+   - ověřit A4 deterministic analytics,
+   - ověřit A5 bounded evidence/provenance,
+   - ověřit A6 production packet + evidence drill-down,
+   - target conversation vybírat pouze exact resolverem nebo explicitním `--conversation-id`,
+   - žádné osobní reporty, inventories, zprávy ani přílohy do veřejného GitHubu.
 
-4. **A6 praktická UX validace**
+2. **Vyřešit všechny real-archive quality stavy**
+   - `INVALID` blokuje pokračování,
+   - `NEEDS_REVIEW` se musí explicitně posoudit a uzavřít,
+   - MVP release candidate vyžaduje odpovídající real-archive verdict podle `docs/A0_REAL_ARCHIVE_GATE.md`.
+
+3. **A6 praktická UX validace**
    - desktop,
    - iPhone portrait,
    - iPhone landscape,
    - evidence a message drill-down,
-   - provádět nad SHA, který prošel požadovanými datovými/QA gates.
+   - provádět až nad SHA a datovým snapshotem, které prošly požadovanými gates.
+
+4. **Průběžná exact-SHA A7 ochrana**
+   - každý další PR/push musí znovu projít full repository pytest, compileall, A5 probe, A6 provenance fixture a aggregate exact-SHA verdict,
+   - předchozí zelený SHA se automaticky nepřenáší na nový commit.
 
 ## Release pravidlo A0
 
-A0 může označit SHA za integračně připravený pouze tehdy, když:
+A0 může označit SHA za synteticky integračně připravený pouze tehdy, když:
 
 - povinné A7 komponenty jsou `VALID`,
 - reporty mají stejný `contract_sha`,
 - aggregate verdict obsahuje `release_ready=true`,
 - neexistuje nevyřešená data-integrity/provenance chyba.
 
-A0 nesmí sám obejít, reinterpretovat nebo ručně „přepsat“ negativní A7 verdict.
+Pro **MVP release candidate** je navíc povinný real-archive gate nad skutečným cílovým archivem. A0 nesmí obejít, reinterpretovat ani ručně „přepsat“ negativní A7 nebo real-archive verdict.
 
 ## Hlavní priorita
 
-**Dokončit a udržovat jeden auditovatelný end-to-end vertical slice; nerozmnožovat funkcionalitu na úkor správnosti, provenance nebo validačního řetězce.**
+**Syntetický vertical slice je zelený. Další krok je prokázat stejnou správnost na skutečném Apple Messages archivu bez publikace osobních dat.**
