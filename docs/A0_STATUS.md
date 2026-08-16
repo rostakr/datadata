@@ -12,98 +12,131 @@ Tento dokument je **operativní stav**, nikoliv druhá architektonická specifik
 
 ## Aktuální synteticky ověřený baseline
 
-- Ověřený SHA: `324a9237f54e1a3f3b29cffb0f4a169c22905825`.
-- GitHub Actions run: `A7 current-main release gate` #21 (`31955109743`).
-- Workflow conclusion: `success`.
+- Ověřený SHA: `4d8723f110d1010410e79b90f558b99d61054e96`.
+- A6 `full-suite-and-smoke` na tomto exact SHA: `success`.
+- A7 `current-main release gate` na tomto exact SHA: `success`.
 - `core = VALID`.
 - `A5 = VALID`.
 - `A6 = VALID`.
-- Všechny component `contract_sha` odpovídají přesně `324a9237f54e1a3f3b29cffb0f4a169c22905825`.
-- `issues = []`.
-- `overall_verdict = VALID`.
-- `release_ready = true`.
+- Aggregate exact-SHA verdict je `VALID` a release gate je zelený.
 
-Tento verdict prokazuje definovaný syntetický exact-current-checkout A1–A7 integrační gate. **Neprokazuje úplnost ani kompatibilitu konkrétního skutečného Apple Messages archivu.**
+Tento verdict prokazuje syntetický exact-current-checkout A1–A7 integrační gate a browser QA nad demo daty. Neprokazuje fyzickou dostupnost všech příloh konkrétního osobního archivu.
 
-### Data-correctness invariants zahrnuté v baseline
+## Reálný Apple Messages archive gate
+
+Real-archive pipeline byla 2026-08-16 znovu spuštěna lokálně nad skutečným Apple Messages snapshotem. Žádný osobní obsah ani lokální report nebyl publikován do GitHubu.
+
+### Ověřený textový/datový řetězec
+
+- source `chat.db` SQLite integrity: `quick_check = ok`,
+- A1: `21 705 / 21 705` message rows emitted,
+- A1 message errors: `0`,
+- A1 reconciliation errors: `0`,
+- A7 staging: `PASS`,
+- A2 canonical ingest: `PASS`,
+- A2 integrity: `PASS`,
+- A3 processing: `PASS`,
+- A7 participant validation: `PASS`,
+- A7 vertical reconciliation: `PASS`,
+- A4 analytics: `PASS`,
+- A5 bounded-context/provenance probe: `PASS`,
+- A6 production packet/provenance probe: `PASS`.
+
+### Cílová canonical conversation
+
+Výběr byl proveden explicitním canonical `conversation_id`, nikoliv fuzzy/substring resolverem.
+
+- memberships: `10 869`,
+- canonical messages: `10 869`,
+- unknown timestamps: `0`,
+- participant cardinality: `2`,
+- source conversation cardinality: `1`.
+
+### Aktuální real-archive verdict
+
+`NEEDS_REVIEW`, nikoliv `INVALID`.
+
+Zbývající quality warningy:
+
+- `3 107` attachment occurrences nelze fyzicky ověřit, protože nebyl dodán odpovídající `Attachments` root,
+- `21` unsupported records jsou orphan attachment rows; nejsou to ztracené message rows.
+
+Textová/canonical/analytická pipeline je tedy lossless pro message rows. Attachment completeness zůstává externí datový blocker, dokud nejsou dostupné fyzické attachment soubory.
+
+## Data-correctness invariants zahrnuté v baseline
 
 - tri-state `is_from_me` se zachovává; unknown se nesmí převést na incoming,
 - sender identity se zachovává nezávisle na neznámém směru,
 - UTC mikrosekundy používají přesnou integer/timedelta aritmetiku bez float-roundingu,
+- JSONL čtení nesmí rozdělit platný záznam na Unicode `U+2028/U+2029`,
+- provenance lookup v A2 používá index podle skutečného `(import_run_id, source_record_key)` kontraktu,
 - provenance a conversation membership se musí zachovat přes A2→A6→A5,
 - chybějící/stale provenance je fail-closed,
+- Ollama A5 preflight kontroluje server + přesný model přes `/api/tags` před `/api/chat`,
+- žádný cloud fallback není povolen,
 - A7 current-main release workflow se spouští pro každý PR a každý push do `main`.
 
-## Řídicí hierarchie
+## A6 browser QA
 
-1. `PROJECT_SPEC.md`
-2. canonical kontrakty v `docs/`
-3. A0/A7 release a validační dokumentace
-4. `docs/agents/*.md`
-5. ostatní dokumentace
-6. historické návrhy
+Na `main` je automatizovaný browser gate pro:
 
-`docs/PROJECT_SPEC.md` je pouze pointer na root specifikaci a nesmí se rozvíjet jako paralelní master dokument.
+- desktop `1440×900`,
+- iPhone portrait `390×844`,
+- iPhone landscape `844×390`.
+
+Gate kontroluje Streamlit exception stav, všech 7 hlavních tabů, page-level horizontal overflow a responsive layout metrik `6 → 1 → 2`.
+
+Na `main` je rovněž `tools/a6_real_data_ui_qa.py`, který umí stejnou matici spustit **lokálně nad explicitně zadanou canonical SQLite databází** bez uploadu osobních dat. Screenshoty s osobním obsahem jsou opt-in a defaultně se nevytvářejí.
 
 ## Stav modulů
 
 ### A1 — Import dat
 
-Implementace je na `main`. Povinné invariants: read-only source, explicitní source identity, accounting každého vstupního záznamu a reconciliation.
+**VALIDATED on real archive for message rows.** Read-only source, source identity, accounting a reconciliation prošly na skutečném snapshotu.
 
 ### A2 — Normalizace a databáze
 
-Canonical SQLite, lossless membership, provenance a přesná práce s časem jsou na `main`. A2 je autorita canonical modelu pro A3–A7.
+**VALIDATED on real archive.** Canonical SQLite, lossless membership, provenance, přesné timestampy a integrity gate prošly.
 
 ### A3 — Zpracování a třídění
 
-Processing, sessions/threads a participant resolution jsou na `main`. A3 vytváří pouze derived struktury a nesmí zavést paralelní message/participant model.
+**VALIDATED on real archive.** Processing a participant resolution prošly bez ztráty canonical messages.
 
 ### A4 — Analytický engine
 
-Deterministické metriky a kandidátní vzorce jsou na `main`. A4 nesmí maskovat interpretaci jako metriku.
+**VALIDATED on real archive.** Deterministické analytics + A7 oracle prošly.
 
 ### A5 — AI analýza
 
-Bounded context, evidence chain a provenance integrace jsou na `main`. AI pracuje pouze nad relevantním kontextem a musí explicitně oddělit fakta, metriky, vzorce, interpretaci a nejistotu.
+**VALIDATED for bounded-context/evidence/provenance path.** Live external/local model inference není součástí real-archive gate; Ollama readiness je nyní fail-closed přes explicitní preflight.
 
 ### A6 — Rozhraní
 
-Streamlit UI a evidence/provenance bridge jsou na `main`. Production read path musí fail-closed při chybějící nebo stale provenance a umožnit drill-down z výsledku na evidence/source.
+**SYNTHETIC BROWSER VALIDATED + REAL-DATA PROVENANCE VALIDATED.** Desktop/iPhone browser matrix je zelená na demo datech; production packet/provenance probe je zelený na reálné canonical DB. Finální interaktivní browser run nad reálnou canonical DB zůstává posledním bodem issue #6.
 
 ### A7 — QA / validace
 
-Independent oracles a exact-SHA release harness jsou v repozitáři. A7 je jediná vrstva oprávněná vydat strojový release verdict podle `docs/A7_RELEASE_GATE.md`.
+**VALID.** Independent oracles, exact-SHA release harness a real-archive reconciliation rozhodují fail-closed.
 
 ## Aktuální integrační fronta
 
-1. **Real Apple archive gate — nejvyšší priorita**
-   - spustit lokálně nad skutečným požadovaným `chat.db`,
-   - source před/po musí zůstat byte-identical,
-   - ověřit A1 source reconciliation,
-   - ověřit A2 canonical integrity/provenance,
-   - ověřit A3 processing a participant resolution,
-   - ověřit A4 deterministic analytics,
-   - ověřit A5 bounded evidence/provenance,
-   - ověřit A6 production packet + evidence drill-down,
-   - target conversation vybírat pouze exact resolverem nebo explicitním `--conversation-id`,
-   - žádné osobní reporty, inventories, zprávy ani přílohy do veřejného GitHubu.
+1. **Dokončit issue #6 — real-data A6 browser run**
+   - spustit `tools/a6_real_data_ui_qa.py` nad canonical `messages.sqlite` vytvořenou real-archive gate,
+   - desktop + iPhone portrait + iPhone landscape,
+   - ověřit `Konverzace`, `Vybrané zprávy`, `Analýza`, evidence drill-down a žádné Streamlit exceptions,
+   - osobní DB/report/screenshoty nesmí být uploadovány do veřejného GitHubu.
 
-2. **Vyřešit všechny real-archive quality stavy**
-   - `INVALID` blokuje pokračování,
-   - `NEEDS_REVIEW` se musí explicitně posoudit a uzavřít,
-   - MVP release candidate vyžaduje odpovídající real-archive verdict podle `docs/A0_REAL_ARCHIVE_GATE.md`.
+2. **Attachment completeness**
+   - pokud budou dodány fyzické Apple Messages `Attachments`, znovu spustit real-archive gate s `--attachments-root`,
+   - bez attachments root zůstává tento stav explicitně `NEEDS_REVIEW`; nesmí se přepsat na `VALID` ručně.
 
-3. **A6 praktická UX validace**
-   - desktop,
-   - iPhone portrait,
-   - iPhone landscape,
-   - evidence a message drill-down,
-   - provádět až nad SHA a datovým snapshotem, které prošly požadovanými gates.
+3. **Live local A5 execution**
+   - po dostupnosti lokální Ollama instance a požadovaného modelu spustit explicitní live A5 analýzu přes nový preflight,
+   - zachovat bounded context a provenance,
+   - žádný cloud fallback.
 
-4. **Průběžná exact-SHA A7 ochrana**
-   - každý další PR/push musí znovu projít full repository pytest, compileall, A5 probe, A6 provenance fixture a aggregate exact-SHA verdict,
-   - předchozí zelený SHA se automaticky nepřenáší na nový commit.
+4. **Průběžná exact-SHA ochrana**
+   - každý další PR/push musí znovu projít full repository pytest, compileall, A5 probe, A6 provenance fixture, A6 browser gate a aggregate A7 exact-SHA verdict.
 
 ## Release pravidlo A0
 
@@ -114,8 +147,15 @@ A0 může označit SHA za synteticky integračně připravený pouze tehdy, kdy�
 - aggregate verdict obsahuje `release_ready=true`,
 - neexistuje nevyřešená data-integrity/provenance chyba.
 
-Pro **MVP release candidate** je navíc povinný real-archive gate nad skutečným cílovým archivem. A0 nesmí obejít, reinterpretovat ani ručně „přepsat“ negativní A7 nebo real-archive verdict.
+Pro MVP release candidate je navíc povinné:
+
+- real-archive message/canonical/analytics řetězec bez integrity chyby,
+- explicitní posouzení všech `NEEDS_REVIEW` warningů,
+- praktický A6 real-data browser run,
+- žádné publikování osobního archivu do veřejného repozitáře.
+
+A0 nesmí obejít, reinterpretovat ani ručně „přepsat“ negativní A7 nebo real-archive verdict.
 
 ## Hlavní priorita
 
-**Syntetický vertical slice je zelený. Další krok je prokázat stejnou správnost na skutečném Apple Messages archivu bez publikace osobních dat.**
+**Datový a analytický vertical slice je ověřený i na skutečném archivu. Nejbližší release úkol je dokončit lokální A6 browser QA nad touto canonical databází; přílohy zůstávají samostatný externí data-quality blocker.**
