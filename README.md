@@ -65,9 +65,11 @@ python -m tools.local_app \
   --conversation-id CANONICAL_CONVERSATION_ID
 ```
 
-Launcher pouze skládá existující `tools.real_archive_gate` a A6. RAW archiv zůstává read-only. Pokud není uveden `--workdir`, odvozená data vzniknou mimo repozitář pod `~/.analyzazprav/runs/`. Verdict `INVALID` UI nespustí; `NEEDS_REVIEW` lze otevřít pouze jako explicitní lokální kontrolu a není tím změněn na `VALID`.
+Launcher pouze skládá existující `tools.real_archive_gate` a A6. RAW archiv zůstává **read-only**. Pokud není uveden `--workdir`, odvozená data vzniknou mimo repozitář v adresáři `~/.datadata/runs/`.
 
-Pro vývoj lze A6 spustit samostatně a zdroj zvolit ručně:
+Verdict `INVALID` UI nespustí. Stav `NEEDS_REVIEW` lze otevřít pouze jako explicitní lokální kontrolu; samotným otevřením se verdict nemění na `VALID`.
+
+Pro vývoj lze A6 spustit také samostatně a zdroj dat zvolit ručně:
 
 ```bash
 streamlit run app.py
