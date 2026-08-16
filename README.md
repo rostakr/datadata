@@ -55,10 +55,10 @@ Kompletní read-only gate nad skutečným `chat.db` spusťte z kořene repozitá
 python -m tools.real_archive_gate \
   --chat-db /cesta/k/chat.db \
   --workdir /cesta/k/novemu-prazdnemu-workdir \
-  --target ILA
+  --target EXACT_TARGET
 ```
 
-Resolver nikdy fuzzy nevybere conversation. Pokud textový target není přesná canonical/source identita, další běh se provede s explicitním `--conversation-id`.
+`EXACT_TARGET` nahraďte pouze přesnou canonical/source identitou z lokálního archivu. Resolver nikdy fuzzy nevybere conversation. Pokud target není přesná canonical/source identita, další běh se provede s explicitním `--conversation-id`.
 
 Podrobný kontrakt: [`docs/A0_REAL_ARCHIVE_GATE.md`](docs/A0_REAL_ARCHIVE_GATE.md).
 
