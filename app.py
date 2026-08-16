@@ -240,8 +240,11 @@ _legacy.significant_periods = significant_periods
 
 def main():
     install_responsive_contract(_legacy.st)
+    result = _legacy.main()
+    # Preserve the mature A6 sidebar widget order; diagnostics are appended after
+    # the existing source/contact controls rather than inserted ahead of them.
     _render_local_provider_preflight()
-    return _legacy.main()
+    return result
 
 
 if __name__ == "__main__":
