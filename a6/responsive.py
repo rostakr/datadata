@@ -9,7 +9,10 @@ truncate, reorder or reinterpret canonical/analytical data.
 
 from typing import Any
 
-TABLET_BREAKPOINT_PX = 768
+# Modern iPhones can exceed 800 px CSS width in landscape. Keep the tablet/mobile
+# layout active through 1024 px so the six desktop metrics never remain squeezed
+# into one row on a phone held horizontally.
+TABLET_BREAKPOINT_PX = 1024
 PHONE_BREAKPOINT_PX = 480
 MIN_TOUCH_TARGET_PX = 44
 
