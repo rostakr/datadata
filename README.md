@@ -34,14 +34,40 @@ Při konfliktu dokumentace má přednost `PROJECT_SPEC.md` a canonical kontrakty
 - významný závěr musí být dohledatelný ke zprávám, metrikám a provenance,
 - změna není hotová bez testu/validace a bez relevantního A7 gate.
 
-## Vývojové spuštění
+## Instalace
 
 ```bash
 python -m pip install -r requirements.txt
 pytest -q
 ```
 
-Lokální UI:
+## Nejjednodušší lokální spuštění
+
+Pokud už existuje canonical `messages.sqlite`:
+
+```bash
+python -m tools.local_app --database /cesta/messages.sqlite
+```
+
+Přímo z Apple Messages `chat.db`:
+
+```bash
+python -m tools.local_app \
+  --chat-db /cesta/k/chat.db \
+  --target EXACT_TARGET
+```
+
+`EXACT_TARGET` musí být přesná canonical/source identita; fuzzy výběr se nepoužívá. Alternativně lze zadat autoritativní lokální ID:
+
+```bash
+python -m tools.local_app \
+  --chat-db /cesta/k/chat.db \
+  --conversation-id CANONICAL_CONVERSATION_ID
+```
+
+Launcher pouze skládá existující `tools.real_archive_gate` a A6. RAW archiv zůstává read-only. Pokud není uveden `--workdir`, odvozená data vzniknou mimo repozitář pod `~/.analyzazprav/runs/`. Verdict `INVALID` UI nespustí; `NEEDS_REVIEW` lze otevřít pouze jako explicitní lokální kontrolu a není tím změněn na `VALID`.
+
+Pro vývoj lze A6 spustit samostatně a zdroj zvolit ručně:
 
 ```bash
 streamlit run app.py
@@ -49,7 +75,7 @@ streamlit run app.py
 
 ## Reálný Apple Messages archiv
 
-Kompletní read-only gate nad skutečným `chat.db` spusťte z kořene repozitáře:
+Kompletní read-only gate bez automatického spuštění UI lze spustit samostatně:
 
 ```bash
 python -m tools.real_archive_gate \
