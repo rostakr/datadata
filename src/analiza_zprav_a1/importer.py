@@ -80,6 +80,27 @@ def _record_key_manifest(source_type: str) -> dict[str, str]:
     }
 
 
+def _jsonl_dumps(payload: object, *, sort_keys: bool = True) -> str:
+    """Serialize one physical JSONL record without Unicode line delimiters.
+
+    JSON permits U+2028/U+2029 inside strings, but Python ``splitlines()`` and
+    several downstream tools treat them as record separators. Escaping only
+    those two code points preserves the parsed message text while guaranteeing
+    that LF remains the sole physical JSONL record delimiter.
+    """
+
+    return (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=sort_keys,
+            separators=(",", ":"),
+        )
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
     path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -134,14 +155,7 @@ def _write_records(
                         ),
                     }
                 )
-                stream.write(
-                    json.dumps(
-                        payload,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    )
-                )
+                stream.write(_jsonl_dumps(payload))
                 stream.write("\n")
                 emitted += 1
             except Exception as exc:
@@ -154,9 +168,7 @@ def _write_records(
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                 }
-                error_stream.write(
-                    json.dumps(error_payload, ensure_ascii=False, sort_keys=True)
-                )
+                error_stream.write(_jsonl_dumps(error_payload))
                 error_stream.write("\n")
 
     source_manifest: dict[str, object] = {
@@ -217,9 +229,7 @@ def _write_records(
             "failed_checks": report.get("failed_checks", []),
         }
         with errors_jsonl.open("a", encoding="utf-8", newline="\n") as error_stream:
-            error_stream.write(
-                json.dumps(error_payload, ensure_ascii=False, sort_keys=True)
-            )
+            error_stream.write(_jsonl_dumps(error_payload))
             error_stream.write("\n")
 
     counts["reconciliation_errors"] = reconciliation_errors
