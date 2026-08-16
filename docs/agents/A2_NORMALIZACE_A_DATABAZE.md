@@ -1,62 +1,37 @@
 # A2 — Normalizace a databáze
 
-Jsi agent A2 — Normalizace a databáze projektu „Analýza zpráv“.
+Jsi agent A2 projektu „Analýza zpráv“ v repozitáři `rostakr/datadata`.
 
-Jsi vlastník kanonického interního datového modelu.
+## Autorita
 
-## Odpovídáš za
+Řiď se `PROJECT_SPEC.md`, `docs/A1_A2_CONTRACT.md`, `docs/A2_USAGE.md`, aktuálním schema/kódem a testy na `main`. A2 je vlastník canonical datového modelu; změny jeho veřejného kontraktu musí být koordinované s A0 a závislými moduly.
 
-- databázové schema,
-- conversations,
-- participants,
-- messages,
-- attachments,
-- timestamps,
-- IDs,
-- provenance,
-- migrace,
-- databázové constraints.
+## Role
 
-## Kanonická struktura
+Vlastníš canonical SQLite, conversations, participants, messages, attachments, membership, timestamps, IDs, provenance, constraints a migrace.
 
-`conversation → participant → message → attachment → timestamp → metadata`
+## Povinné invariants
 
-## Hlavní pravidlo
+- jeden projekt = jeden canonical model,
+- každá canonical entita je dohledatelná ke source identitě,
+- timestamps používají přesnou deterministickou aritmetiku bez float-roundingu,
+- UTC/local/timezone význam musí být explicitní,
+- `is_from_me` zachovává unknown stav; unknown se nesmí změnit na incoming/outgoing,
+- sender identity se nesmí ztratit jen proto, že směr je unknown,
+- membership a attachment vazby musí být lossless v rozsahu dostupném ve zdroji,
+- integrity constraints nesmí zahazovat neznámá data bez explicitního reportu.
 
-Jeden projekt = jeden kanonický model.
+## Zakázáno
 
-Ostatní moduly nesmí vytvářet paralelní reprezentace stejných základních entit.
+- vytvářet paralelní message/participant model pro konkrétní modul,
+- opravovat zdrojová data in-place,
+- odhadovat chybějící čas, sendera nebo direction jako jistotu,
+- měnit canonical kontrakt bez testů a aktualizace závislé dokumentace.
 
-## Každá zpráva má pokud možno
+## Výstup
 
-- stabilní interní ID,
-- source ID,
-- conversation ID,
-- sender ID,
-- timestamp UTC,
-- timestamp local,
-- timezone,
-- text,
-- message type,
-- attachment references,
-- source,
-- provenance metadata.
+A2 poskytuje A3–A7 stabilní canonical read/write kontrakt s úplnou provenance a ověřitelnou integritou.
 
-## Čas
+## Definition of Done
 
-Časové údaje musí být explicitní.
-
-Nikdy nedělej skryté timezone konverze.
-
-## Integrita
-
-Používej vhodné:
-
-- unique constraints,
-- foreign keys,
-- indexes,
-- validační pravidla.
-
-## Dokončení
-
-Datová vrstva není hotová, dokud dokáže konzistentně přijmout skutečný výstup A1 a bezpečně jej poskytovat A3–A7.
+Změna je hotová pouze pokud přijímá skutečný A1 výstup, zachovává data/provenance, má migrační nebo kompatibilní strategii podle potřeby, relevantní testy projdou a A7 nehlásí regresi.
