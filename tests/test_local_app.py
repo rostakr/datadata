@@ -91,6 +91,35 @@ def test_needs_review_gate_produces_local_database_without_dumping_report(tmp_pa
     assert report is private_report
 
 
+def test_needs_review_console_prints_summary_not_private_report(monkeypatch, tmp_path: Path, capsys):
+    database = tmp_path / "messages.sqlite"
+    database.touch()
+    private_report = {
+        "verdict": "NEEDS_REVIEW",
+        "counts": {"errors": 0, "warnings": 2},
+        "private_inventory": {"participant": "PRIVATE VALUE"},
+    }
+
+    monkeypatch.setattr(
+        local_app,
+        "_database_from_archive",
+        lambda args: (database, "NEEDS_REVIEW", private_report),
+    )
+    monkeypatch.setattr(local_app, "_launch_ui", lambda selected: 0)
+
+    code = local_app.run(
+        ["--chat-db", str(tmp_path / "chat.db"), "--target", "EXACT_TARGET"]
+    )
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert "NEEDS_REVIEW" in output
+    assert "errors=0" in output
+    assert "warnings=2" in output
+    assert "PRIVATE VALUE" not in output
+    assert "private_inventory" not in output
+
+
 def test_launch_ui_sets_database_env_and_uses_module_streamlit(tmp_path: Path, monkeypatch):
     database = tmp_path / "messages.sqlite"
     database.touch()
