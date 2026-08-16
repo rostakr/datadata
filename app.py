@@ -22,6 +22,7 @@ from a6.evidence import (
     load_current_message_provenance,
     reconcile_a5_evidence_ref,
 )
+from a6.responsive import install_responsive_contract
 from a6.semantics import candidate_semantics
 
 _CURRENT_DB_PATH: str | None = None
@@ -187,6 +188,7 @@ _legacy.significant_periods = significant_periods
 
 
 def main():
+    install_responsive_contract(_legacy.st)
     return _legacy.main()
 
 
