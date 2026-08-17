@@ -68,3 +68,13 @@ def test_v3_scopes_tab_content_and_avoids_pointer_open_for_finding_select():
     assert 'combobox.press("ArrowDown")' in source
     assert 'option.click(timeout=timeout_ms, force=True)' in source
     assert "interaction_checks = _empty_interaction_checks()" in source
+
+
+def test_v3_period_control_uses_rendered_date_widget_not_label_text():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "a6_real_data_ui_qa_v3.py"
+    ).read_text(encoding="utf-8")
+    assert '[data-testid="stDateInput"]' in source
+    assert 'page.get_by_text("Období", exact=True).count() > 0' not in source
