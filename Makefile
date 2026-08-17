@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 PYTHON ?= python
 STREAMLIT_PORT ?= 8501
 SMOKE_PORT ?= 8765
