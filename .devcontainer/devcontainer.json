@@ -1,8 +1,8 @@
 {
   "name": "datadata",
   "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
-  "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python -m pytest -q",
-  "postStartCommand": "nohup python -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501 > /tmp/datadata-streamlit.log 2>&1 &",
+  "postCreateCommand": "make setup-dev && make check && make a6-smoke",
+  "postStartCommand": "bash .devcontainer/post-start.sh",
   "forwardPorts": [8501],
   "portsAttributes": {
     "8501": {
@@ -19,6 +19,7 @@
     }
   },
   "remoteEnv": {
-    "PYTHONUNBUFFERED": "1"
+    "PYTHONUNBUFFERED": "1",
+    "STREAMLIT_BROWSER_GATHER_USAGE_STATS": "false"
   }
 }
