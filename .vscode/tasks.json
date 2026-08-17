@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "datadata: full check",
+      "type": "shell",
+      "command": "make check",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "A6: run Streamlit",
+      "type": "shell",
+      "command": "make ui",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "A6: viewport smoke",
+      "type": "shell",
+      "command": "make a6-smoke",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}
