@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -8,6 +9,23 @@ from typing import Any, Mapping, Sequence
 
 class RealArchiveReviewError(RuntimeError):
     pass
+
+
+_ALLOWED_UNSUPPORTED_REASONS: dict[str, set[str]] = {
+    "chat_message_join": {
+        "missing message_id or chat_id",
+        "relation points to a missing message row",
+    },
+    "message_attachment_join": {
+        "missing message_id or attachment_id",
+        "relation points to a missing message row",
+        "relation points to a missing attachment row",
+    },
+    "attachment": {
+        "attachment row is referenced only by an unsupported relation",
+        "attachment row is not referenced by message_attachment_join",
+    },
+}
 
 
 def _read_object(path: Path) -> dict[str, Any]:
@@ -22,20 +40,33 @@ def _read_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _issue_codes(report: Mapping[str, Any], severity: str) -> list[str]:
-    codes: set[str] = set()
+def _read_optional_object(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    return _read_object(path)
+
+
+def _issue_entries(report: Mapping[str, Any], severity: str) -> list[Mapping[str, Any]]:
+    result: list[Mapping[str, Any]] = []
     issues = report.get("issues") or []
     if not isinstance(issues, list):
-        return []
+        return result
     for issue in issues:
         if not isinstance(issue, Mapping):
             continue
-        if str(issue.get("severity") or "").upper() != severity:
-            continue
-        code = str(issue.get("code") or "").strip()
-        if code:
-            codes.add(code)
-    return sorted(codes)
+        if str(issue.get("severity") or "").upper() == severity:
+            result.append(issue)
+    return result
+
+
+def _issue_codes(report: Mapping[str, Any], severity: str) -> list[str]:
+    return sorted(
+        {
+            str(issue.get("code") or "").strip()
+            for issue in _issue_entries(report, severity)
+            if str(issue.get("code") or "").strip()
+        }
+    )
 
 
 def _count(value: object) -> int:
@@ -45,12 +76,67 @@ def _count(value: object) -> int:
         return 0
 
 
+def _unsupported_groups(reconciliation: Mapping[str, Any] | None) -> tuple[str, list[dict[str, Any]]]:
+    if reconciliation is None:
+        return "UNAVAILABLE", []
+    records = reconciliation.get("unsupported_records") or []
+    if not isinstance(records, list):
+        return "UNAVAILABLE", []
+
+    groups: Counter[tuple[str, str]] = Counter()
+    for record in records:
+        if not isinstance(record, Mapping):
+            groups[("OTHER", "OTHER")] += 1
+            continue
+        record_type = str(record.get("record_type") or "")
+        reason = str(record.get("reason") or "")
+        if record_type in _ALLOWED_UNSUPPORTED_REASONS and reason in _ALLOWED_UNSUPPORTED_REASONS[record_type]:
+            groups[(record_type, reason)] += 1
+        else:
+            groups[("OTHER", "OTHER")] += 1
+
+    return (
+        "COMPLETE",
+        [
+            {"record_type": record_type, "reason": reason, "count": count}
+            for (record_type, reason), count in sorted(groups.items())
+        ],
+    )
+
+
+def _a5_category(detail: object) -> str:
+    text = str(detail or "").casefold()
+    if "unknown timestamp" in text:
+        return "UNKNOWN_TIMESTAMPS"
+    if "although max_messages=" in text:
+        return "EVIDENCE_EXCEEDS_CONTEXT_LIMIT"
+    if "legacy a2 fixture" in text:
+        return "LEGACY_SOURCE_PROVENANCE"
+    if "candidate evidence is unavailable" in text:
+        return "MISSING_EVIDENCE"
+    if "lack source_record_key provenance" in text:
+        return "MISSING_SOURCE_PROVENANCE"
+    return "OTHER"
+
+
+def _a5_categories(report: Mapping[str, Any]) -> list[str]:
+    categories = {
+        _a5_category(issue.get("detail"))
+        for severity in ("WARNING", "ERROR")
+        for issue in _issue_entries(report, severity)
+        if str(issue.get("code") or "").startswith("A5_")
+    }
+    return sorted(categories)
+
+
 def classify_review(report_path: str | Path) -> dict[str, Any]:
     """Classify a local real-archive gate result without exposing private identifiers or paths."""
 
     path = Path(report_path).expanduser().resolve()
     report = _read_object(path)
-    manifest = _read_object(path.parent / "a1_staging" / "manifest.json")
+    staging = path.parent / "a1_staging"
+    manifest = _read_object(staging / "manifest.json")
+    reconciliation = _read_optional_object(staging / "reconciliation.json")
 
     manifest_counts = manifest.get("counts") or {}
     if not isinstance(manifest_counts, Mapping):
@@ -74,6 +160,8 @@ def classify_review(report_path: str | Path) -> dict[str, Any]:
     warning_codes = _issue_codes(report, "WARNING")
     error_codes = _issue_codes(report, "ERROR")
     a5_warning_codes = [code for code in warning_codes if code.startswith("A5_")]
+    a5_categories = _a5_categories(report)
+    unsupported_grouping_status, unsupported_groups = _unsupported_groups(reconciliation)
 
     if missing_attachments == 0:
         attachment_state = "NONE"
@@ -95,7 +183,7 @@ def classify_review(report_path: str | Path) -> dict[str, Any]:
         actions.append("resolve_gate_errors_before_release")
 
     return {
-        "contract": "real-archive-review-v1",
+        "contract": "real-archive-review-v2",
         "gate_status": str(report.get("status") or "UNKNOWN"),
         "gate_verdict": str(report.get("verdict") or "UNKNOWN"),
         "release_ready": bool(report.get("release_ready")),
@@ -110,10 +198,13 @@ def classify_review(report_path: str | Path) -> dict[str, Any]:
             "unsupported_records": {
                 "present": unsupported > 0,
                 "count": unsupported,
+                "grouping_status": unsupported_grouping_status,
+                "groups": unsupported_groups,
             },
             "a5_quality": {
                 "present": bool(a5_warning_codes),
                 "warning_codes": a5_warning_codes,
+                "categories": a5_categories,
             },
         },
         "recommended_actions": actions,
@@ -125,7 +216,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m tools.real_archive_review",
         description=(
             "Classify an existing local real_archive_report.json into privacy-safe NEEDS_REVIEW categories. "
-            "The command never prints local paths, conversation IDs, contacts, message text, or attachment names."
+            "The command never prints local paths, conversation IDs, contacts, message text, source identifiers, "
+            "or attachment names."
         ),
     )
     parser.add_argument("--report", required=True, type=Path)
