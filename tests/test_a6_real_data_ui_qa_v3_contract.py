@@ -47,10 +47,24 @@ def test_v3_reports_privacy_safe_real_interaction_stages():
         "conversation_content",
         "graphs_tab_click",
         "graphs_content",
-        "finding_select",
+        "finding_select_wait",
+        "finding_select_open",
+        "finding_select_option",
         "finding_evidence_button",
         "selected_messages_content",
         "analysis_content",
     ):
         assert stage in source
     assert 'page.get_by_role("tab", name="Konverzace", exact=True).click' not in source
+
+
+def test_v3_scopes_tab_content_and_avoids_pointer_open_for_finding_select():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "a6_real_data_ui_qa_v3.py"
+    ).read_text(encoding="utf-8")
+    assert '[role="tabpanel"]:visible' in source
+    assert 'combobox.press("ArrowDown")' in source
+    assert 'option.click(timeout=timeout_ms, force=True)' in source
+    assert "interaction_checks = _empty_interaction_checks()" in source
