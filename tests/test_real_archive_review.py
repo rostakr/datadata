@@ -13,6 +13,7 @@ def _write_case(
     missing: int,
     unsupported: int = 0,
     issues: list[dict[str, str]] | None = None,
+    unsupported_records: list[dict[str, object]] | None = None,
 ) -> Path:
     staging = root / "a1_staging"
     staging.mkdir(parents=True)
@@ -26,6 +27,10 @@ def _write_case(
                 },
             }
         ),
+        encoding="utf-8",
+    )
+    (staging / "reconciliation.json").write_text(
+        json.dumps({"unsupported_records": unsupported_records or []}),
         encoding="utf-8",
     )
     report = root / "real_archive_report.json"
@@ -61,6 +66,7 @@ def test_missing_attachments_without_root_are_unverified(tmp_path: Path):
 
     result = classify_review(report)
 
+    assert result["contract"] == "real-archive-review-v2"
     assert result["gate_verdict"] == "NEEDS_REVIEW"
     assert result["release_ready"] is False
     assert result["review"]["attachments"] == {
@@ -92,12 +98,35 @@ def test_missing_attachments_with_root_are_truly_unresolved(tmp_path: Path):
     assert result["recommended_actions"] == ["inspect_unresolved_attachments_locally"]
 
 
-def test_review_summary_keeps_warning_categories_but_redacts_private_context(tmp_path: Path):
+def test_review_summary_groups_known_unsupported_and_redacts_identifiers(tmp_path: Path):
     report = _write_case(
         tmp_path,
         attachment_root=None,
         missing=0,
         unsupported=4,
+        unsupported_records=[
+            {
+                "record_type": "attachment",
+                "source_identifier": "PRIVATE-ATTACHMENT-ID-1",
+                "reason": "attachment row is not referenced by message_attachment_join",
+            },
+            {
+                "record_type": "attachment",
+                "source_identifier": "PRIVATE-ATTACHMENT-ID-2",
+                "reason": "attachment row is not referenced by message_attachment_join",
+            },
+            {
+                "record_type": "message_attachment_join",
+                "source_identifier": "PRIVATE-JOIN-ID",
+                "message_id": "PRIVATE-MESSAGE-ID",
+                "reason": "relation points to a missing attachment row",
+            },
+            {
+                "record_type": "future_private_type",
+                "source_identifier": "/private/example/secret",
+                "reason": "future reason with private payload 999",
+            },
+        ],
         issues=[
             {
                 "severity": "WARNING",
@@ -107,7 +136,7 @@ def test_review_summary_keeps_warning_categories_but_redacts_private_context(tmp
             {
                 "severity": "WARNING",
                 "code": "A5_CONTEXT_QUALITY_WARNING",
-                "detail": "synthetic",
+                "detail": "12 conversation membership(s) have unknown timestamp and cannot be placed in A5 temporal context without guessing.",
             },
         ],
     )
@@ -116,14 +145,82 @@ def test_review_summary_keeps_warning_categories_but_redacts_private_context(tmp
     serialized = json.dumps(result, ensure_ascii=False)
 
     assert result["review"]["attachments"]["state"] == "NONE"
-    assert result["review"]["unsupported_records"] == {"present": True, "count": 4}
+    assert result["review"]["unsupported_records"] == {
+        "present": True,
+        "count": 4,
+        "grouping_status": "COMPLETE",
+        "groups": [
+            {
+                "record_type": "OTHER",
+                "reason": "OTHER",
+                "count": 1,
+            },
+            {
+                "record_type": "attachment",
+                "reason": "attachment row is not referenced by message_attachment_join",
+                "count": 2,
+            },
+            {
+                "record_type": "message_attachment_join",
+                "reason": "relation points to a missing attachment row",
+                "count": 1,
+            },
+        ],
+    }
     assert result["review"]["a5_quality"] == {
         "present": True,
         "warning_codes": ["A5_CONTEXT_QUALITY_WARNING"],
+        "categories": ["UNKNOWN_TIMESTAMPS"],
     }
     assert result["recommended_actions"] == [
         "review_a1_unsupported_records_locally",
         "review_a5_quality_warnings_locally",
     ]
+    assert "/private/example" not in serialized
+    assert "999" not in serialized
+    assert "PRIVATE-" not in serialized
+    assert "future reason" not in serialized
+
+
+def test_missing_reconciliation_is_explicit_not_guessed(tmp_path: Path):
+    report = _write_case(
+        tmp_path,
+        attachment_root=None,
+        missing=0,
+        unsupported=2,
+        issues=[
+            {
+                "severity": "WARNING",
+                "code": "A1_UNSUPPORTED_RECORDS_PRESENT",
+                "detail": "synthetic",
+            }
+        ],
+    )
+    (tmp_path / "a1_staging" / "reconciliation.json").unlink()
+
+    result = classify_review(report)
+
+    assert result["review"]["unsupported_records"]["grouping_status"] == "UNAVAILABLE"
+    assert result["review"]["unsupported_records"]["groups"] == []
+
+
+def test_a5_unknown_details_remain_other(tmp_path: Path):
+    report = _write_case(
+        tmp_path,
+        attachment_root=None,
+        missing=0,
+        issues=[
+            {
+                "severity": "WARNING",
+                "code": "A5_CONTEXT_QUALITY_WARNING",
+                "detail": "future private detail /private/example/secret 999",
+            }
+        ],
+    )
+
+    result = classify_review(report)
+    serialized = json.dumps(result, ensure_ascii=False)
+
+    assert result["review"]["a5_quality"]["categories"] == ["OTHER"]
     assert "/private/example" not in serialized
     assert "999" not in serialized
