@@ -84,7 +84,13 @@ def _exercise_real_interactions_v3(
     """Exercise the real A6 flow while exposing only privacy-safe stage names."""
 
     stage_ref["value"] = "period_control"
-    checks["period_control"] = page.get_by_text("Období", exact=True).count() > 0
+    # The backend data check separately proves that period filtering narrows the
+    # canonical membership set. Browser acceptance only needs to prove that the
+    # real Streamlit date-input widget is rendered; its label may be represented
+    # by Streamlit/React-Aria markup rather than a standalone text node.
+    period_control = page.locator('[data-testid="stDateInput"]').first
+    period_control.wait_for(state="visible", timeout=timeout_ms)
+    checks["period_control"] = True
 
     # Konverzace is the default active tab. Do not perform a redundant click on
     # the already-selected tab; verify its real rendered content instead.
