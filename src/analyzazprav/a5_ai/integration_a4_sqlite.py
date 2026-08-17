@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 import json
 import sqlite3
 from pathlib import Path
@@ -19,6 +20,9 @@ from .models import AnalysisCandidate
 
 class A4SQLiteSourceError(RuntimeError):
     pass
+
+
+LEXICAL_TOPIC_EVIDENCE_CHUNK_SIZE = 120
 
 
 def _json_object(value: object, *, field: str) -> dict[str, float]:
@@ -67,6 +71,11 @@ class A4SQLiteCandidateSource:
     Tiny legacy unit fixtures without analytics_run_id remain readable only so
     converter behavior can be tested in isolation; such candidates are marked
     as lacking production provenance.
+
+    Oversized lexical-topic evidence is split at the A5 handoff rather than
+    truncated. The authoritative A4 topic row remains unchanged; the generated
+    A5 chunks form a deterministic, chronological, lossless partition of its
+    source_message_ids.
     """
 
     database_path: Path
@@ -181,6 +190,90 @@ class A4SQLiteCandidateSource:
                 "candidate_semantics": semantics,
             },
         )
+
+    def _topic_evidence_timestamps(
+        self,
+        candidate: AnalysisCandidate,
+    ) -> dict[str, int]:
+        wanted = set(candidate.evidence_message_ids)
+        if not wanted:
+            return {}
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT id, sent_at_utc_us
+                    FROM analysis_messages
+                    WHERE CAST(conversation_id AS TEXT)=?
+                      AND sent_at_utc_us IS NOT NULL
+                    ORDER BY sent_at_utc_us, id
+                    """,
+                    (candidate.conversation_id,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise A4SQLiteSourceError(
+                "Cannot resolve lexical-topic evidence chronology from analysis_messages"
+            ) from exc
+
+        timestamps: dict[str, int] = {}
+        for row in rows:
+            message_id = str(row["id"])
+            if message_id in wanted and message_id not in timestamps:
+                timestamps[message_id] = int(row["sent_at_utc_us"])
+
+        missing = [message_id for message_id in candidate.evidence_message_ids if message_id not in timestamps]
+        if missing:
+            raise A4SQLiteSourceError(
+                "A4 lexical-topic evidence contains IDs unavailable from timestamped analysis_messages"
+            )
+        return timestamps
+
+    def _chunk_topic_candidate(
+        self,
+        candidate: AnalysisCandidate,
+    ) -> tuple[AnalysisCandidate, ...]:
+        evidence_ids = tuple(candidate.evidence_message_ids)
+        if len(evidence_ids) <= LEXICAL_TOPIC_EVIDENCE_CHUNK_SIZE:
+            return (candidate,)
+
+        timestamps = self._topic_evidence_timestamps(candidate)
+        ordered_ids = tuple(
+            sorted(
+                evidence_ids,
+                key=lambda message_id: (timestamps[message_id], message_id),
+            )
+        )
+        size = LEXICAL_TOPIC_EVIDENCE_CHUNK_SIZE
+        chunks = [ordered_ids[offset : offset + size] for offset in range(0, len(ordered_ids), size)]
+        chunk_count = len(chunks)
+        parent_id = candidate.id
+        result: list[AnalysisCandidate] = []
+        for index, chunk_ids in enumerate(chunks, start=1):
+            first_us = timestamps[chunk_ids[0]]
+            last_us = timestamps[chunk_ids[-1]]
+            result.append(
+                replace(
+                    candidate,
+                    id=f"{parent_id}:chunk:{index:03d}-of-{chunk_count:03d}",
+                    start_ts=datetime.fromtimestamp(first_us / 1_000_000, tz=timezone.utc),
+                    end_ts=datetime.fromtimestamp(last_us / 1_000_000, tz=timezone.utc),
+                    evidence_message_ids=chunk_ids,
+                    metadata={
+                        **dict(candidate.metadata),
+                        "parent_candidate_id": parent_id,
+                        "parent_evidence_message_count": len(ordered_ids),
+                        "evidence_chunk_index": index,
+                        "evidence_chunk_count": chunk_count,
+                        "evidence_chunk_size_limit": size,
+                        "evidence_chunk_strategy": "chronological_partition_v1",
+                    },
+                )
+            )
+
+        flattened = tuple(message_id for chunk in result for message_id in chunk.evidence_message_ids)
+        if flattened != ordered_ids or len(flattened) != len(set(flattened)):
+            raise A4SQLiteSourceError("Lexical-topic evidence chunk partition is not lossless")
+        return tuple(result)
 
     def conflicts(self, conversation_id: str) -> tuple[AnalysisCandidate, ...]:
         result: list[AnalysisCandidate] = []
@@ -304,7 +397,8 @@ class A4SQLiteCandidateSource:
                     ),
                 )
             )
-            result.append(self._decorate(candidate, provenance))
+            decorated = self._decorate(candidate, provenance)
+            result.extend(self._chunk_topic_candidate(decorated))
         return tuple(result)
 
     def candidates(self, conversation_id: str) -> tuple[AnalysisCandidate, ...]:
