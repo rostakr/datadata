@@ -61,6 +61,39 @@ def _benign(identifier: str) -> dict[str, object]:
     }
 
 
+def _write_missing_messages(
+    report: Path,
+    paths: list[str],
+    *,
+    total_bytes: list[int | None] | None = None,
+) -> None:
+    staging = report.parent / "a1_staging"
+    sizes = total_bytes or [None] * len(paths)
+    attachments = [
+        {
+            "source_attachment_id": f"PRIVATE-ID-{index}",
+            "source_path": path,
+            "filename": path,
+            "transfer_name": f"PRIVATE-TRANSFER-{index}",
+            "total_bytes": sizes[index],
+            "resolution_status": "missing",
+        }
+        for index, path in enumerate(paths)
+    ]
+    (staging / "messages.jsonl").write_text(
+        json.dumps(
+            {
+                "record_type": "message",
+                "text": "PRIVATE-MESSAGE-TEXT",
+                "attachments": attachments,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_benign_unreferenced_attachment_rows_do_not_block_release(tmp_path: Path):
     report = _write_case(
         tmp_path,
@@ -78,11 +111,14 @@ def test_benign_unreferenced_attachment_rows_do_not_block_release(tmp_path: Path
 
     result = evaluate_release_policy(report)
 
-    assert result["contract"] == "real-archive-release-review-v1"
+    assert result["contract"] == "real-archive-release-review-v2"
+    assert result["analysis_scope"] == "CANONICAL_TEXT_AND_METADATA"
     assert result["base_gate_verdict"] == "NEEDS_REVIEW"
     assert result["verdict"] == "VALID"
     assert result["release_ready"] is True
     assert result["warning_codes"] == []
+    assert result["limitations"] == []
+    assert result["media_completeness"]["state"] == "COMPLETE"
     assert result["review"]["unsupported_records"]["classification_complete"] is True
     assert result["review"]["unsupported_records"]["nonblocking_count"] == 2
     assert result["review"]["unsupported_records"]["blocking_count"] == 0
@@ -145,7 +181,7 @@ def test_unknown_or_incomplete_grouping_fails_closed(tmp_path: Path):
     assert "A1_UNSUPPORTED_CLASSIFICATION_INCOMPLETE" in result["warning_codes"]
 
 
-def test_other_quality_warning_is_preserved_even_when_unsupported_is_benign(tmp_path: Path):
+def test_other_quality_warning_is_preserved_when_attachment_audit_is_unavailable(tmp_path: Path):
     report = _write_case(
         tmp_path,
         unsupported=1,
@@ -171,7 +207,99 @@ def test_other_quality_warning_is_preserved_even_when_unsupported_is_benign(tmp_
     assert result["verdict"] == "NEEDS_REVIEW"
     assert result["warning_codes"] == ["A1_ATTACHMENTS_MISSING"]
     assert result["review"]["attachments"]["state"] == "UNRESOLVED_WITH_ROOT"
+    assert result["review"]["attachment_absence"]["audited"] is False
+    assert result["review"]["attachment_absence"]["release_blocking"] is True
+    assert result["media_completeness"]["state"] == "UNRESOLVED"
     assert "inspect_unresolved_attachments_locally" in result["recommended_actions"]
+
+
+def test_proven_physical_attachment_absence_becomes_explicit_media_limitation(tmp_path: Path):
+    attachments_root = tmp_path / "PRIVATE-ATTACHMENTS-ROOT"
+    attachments_root.mkdir()
+    report = _write_case(
+        tmp_path,
+        unsupported=0,
+        attachment_root=str(attachments_root),
+        attachments_missing=2,
+        issues=[
+            {
+                "severity": "WARNING",
+                "code": "A1_ATTACHMENTS_MISSING",
+                "detail": "synthetic",
+            }
+        ],
+    )
+    _write_missing_messages(
+        report,
+        [
+            "/private/source/PRIVATE-ABSENT-A.bin",
+            "/private/source/PRIVATE-ABSENT-B.bin",
+        ],
+    )
+    before = report.read_bytes()
+
+    result = evaluate_release_policy(report)
+    serialized = json.dumps(result, ensure_ascii=False)
+
+    assert result["verdict"] == "VALID"
+    assert result["release_ready"] is True
+    assert result["warning_codes"] == []
+    assert result["limitations"] == ["REFERENCED_ATTACHMENT_BINARIES_UNAVAILABLE"]
+    assert result["media_completeness"] == {
+        "state": "PARTIAL",
+        "referenced_binary_files_complete": False,
+        "missing_occurrence_count": 2,
+    }
+    absence = result["review"]["attachment_absence"]
+    assert absence["audited"] is True
+    assert absence["classification_complete"] is True
+    assert absence["release_blocking"] is False
+    assert absence["not_found_count"] == 2
+    assert absence["physical_absence_likely"] is True
+    assert absence["resolver_fix_indicated"] is False
+    assert absence["relocation_investigation_indicated"] is False
+    assert "inspect_unresolved_attachments_locally" not in result["recommended_actions"]
+    assert "PRIVATE-" not in serialized
+    assert str(tmp_path) not in serialized
+    assert report.read_bytes() == before
+
+
+def test_relocated_attachment_candidate_remains_release_blocking(tmp_path: Path):
+    attachments_root = tmp_path / "Attachments"
+    relocated = attachments_root / "different" / "candidate.bin"
+    relocated.parent.mkdir(parents=True)
+    relocated.write_bytes(b"candidate")
+    report = _write_case(
+        tmp_path,
+        unsupported=0,
+        attachment_root=str(attachments_root),
+        attachments_missing=1,
+        issues=[
+            {
+                "severity": "WARNING",
+                "code": "A1_ATTACHMENTS_MISSING",
+                "detail": "synthetic",
+            }
+        ],
+    )
+    _write_missing_messages(
+        report,
+        ["/private/source/candidate.bin"],
+        total_bytes=[len(b"candidate")],
+    )
+
+    result = evaluate_release_policy(report)
+
+    assert result["verdict"] == "NEEDS_REVIEW"
+    assert result["release_ready"] is False
+    assert result["warning_codes"] == ["A1_ATTACHMENTS_MISSING"]
+    assert result["limitations"] == []
+    assert result["media_completeness"]["state"] == "UNRESOLVED"
+    absence = result["review"]["attachment_absence"]
+    assert absence["classification_complete"] is False
+    assert absence["release_blocking"] is True
+    assert absence["relocated_unique_candidate_count"] == 1
+    assert absence["relocation_investigation_indicated"] is True
 
 
 def test_private_identifiers_are_not_exposed(tmp_path: Path):
