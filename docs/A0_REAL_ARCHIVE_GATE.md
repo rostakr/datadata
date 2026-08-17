@@ -61,6 +61,25 @@ Přílohy lze doplnit explicitně:
 
 Běžná A5 redukce dlouhého kontextu na bounded selection je zaznamenána v A5 probe, ale sama o sobě není release chyba; candidate evidence se nesmí tiše ztratit.
 
+## Diagnostika `NEEDS_REVIEW`
+
+Existující lokální report lze klasifikovat bez nového importu a bez změny release verdictu:
+
+```bash
+python -m tools.real_archive_review \
+  --report /PRIVATE/WORKDIR/real_archive_report.json
+```
+
+Classifier čte pouze lokální `real_archive_report.json` a odpovídající `a1_staging/manifest.json`. Na stdout nevypisuje lokální cesty, conversation IDs, kontakty, message text ani názvy příloh.
+
+Attachment stav má tři hodnoty:
+
+- `NONE` — A1 nemá unresolved attachment occurrence;
+- `UNVERIFIED_NO_ROOT` — unresolved attachments existují, ale při původním gate nebyl dodán `--attachments-root`; pro skutečné ověření je nutný nový gate run s explicitním rootem;
+- `UNRESOLVED_WITH_ROOT` — root byl dodán a některé attachment occurrence zůstaly unresolved; ty je nutné zkontrolovat lokálně.
+
+Classifier současně uvádí pouze privacy-safe kategorie pro `unsupported` A1 records a A5 quality warnings. Nezvyšuje `NEEDS_REVIEW` na `VALID`, nepřepisuje `real_archive_report.json` a není náhradou za A7 gate.
+
 ## Ochrana dat
 
 Nástroj neposílá zprávy žádné externí službě a report nemá ukládat text zpráv. Inventář obsahuje lokální participant/source identity hodnoty potřebné k bezpečné identifikaci conversation, proto zůstává výhradně v lokálním workdiru.
