@@ -4,11 +4,13 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
 from tools.real_archive_gate import (
     RealArchiveGateError,
+    _select_a5_probe_candidates,
     conversation_inventory,
     resolve_conversation,
     run_gate,
@@ -129,6 +131,44 @@ def test_explicit_conversation_id_is_authoritative():
     result = resolve_conversation(inventory, conversation_id=7)
     assert result["conversation_id"] == 7
     assert result["selector"] == "conversation_id"
+
+
+def test_a5_probe_selection_keeps_all_chunks_of_first_lexical_topic_parent():
+    candidates = [
+        SimpleNamespace(candidate_type="conflict", id="conflict-1", metadata={}),
+        SimpleNamespace(candidate_type="conflict", id="conflict-2", metadata={}),
+        SimpleNamespace(
+            candidate_type="lexical_topic",
+            id="topic-a:chunk:001-of-003",
+            metadata={"parent_candidate_id": "topic-a"},
+        ),
+        SimpleNamespace(
+            candidate_type="lexical_topic",
+            id="topic-b:chunk:001-of-002",
+            metadata={"parent_candidate_id": "topic-b"},
+        ),
+        SimpleNamespace(
+            candidate_type="lexical_topic",
+            id="topic-a:chunk:002-of-003",
+            metadata={"parent_candidate_id": "topic-a"},
+        ),
+        SimpleNamespace(candidate_type="change_point", id="change-1", metadata={}),
+        SimpleNamespace(
+            candidate_type="lexical_topic",
+            id="topic-a:chunk:003-of-003",
+            metadata={"parent_candidate_id": "topic-a"},
+        ),
+    ]
+
+    selected = _select_a5_probe_candidates(candidates)
+
+    assert [candidate.id for candidate in selected] == [
+        "conflict-1",
+        "topic-a:chunk:001-of-003",
+        "topic-a:chunk:002-of-003",
+        "change-1",
+        "topic-a:chunk:003-of-003",
+    ]
 
 
 def test_real_chat_db_gate_runs_existing_a1_a7_pipeline_and_keeps_source_read_only(tmp_path: Path):
