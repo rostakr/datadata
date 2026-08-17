@@ -101,6 +101,10 @@ def _evidence_from_data(data: dict[str, Any] | None, fallback_ids: tuple[str, ..
                 timestamp=item["timestamp"],
                 sender_id=item["sender_id"],
                 excerpt=item.get("excerpt", ""),
+                membership_id=item.get("membership_id"),
+                source_record_keys=tuple(item.get("source_record_keys", ())),
+                source_snapshot_keys=tuple(item.get("source_snapshot_keys", ())),
+                source_parser_versions=tuple(item.get("source_parser_versions", ())),
             )
             for item in data.get("messages", [])
         ),
@@ -109,6 +113,11 @@ def _evidence_from_data(data: dict[str, Any] | None, fallback_ids: tuple[str, ..
                 phase=item["phase"],
                 name=item["name"],
                 value=float(item["value"]),
+                analytics_run_id=item.get("analytics_run_id"),
+                analytics_version=item.get("analytics_version"),
+                analysis_signature=item.get("analysis_signature"),
+                source_fingerprint=item.get("source_fingerprint"),
+                processing_run_id=item.get("processing_run_id"),
             )
             for item in data.get("metrics", [])
         ),
