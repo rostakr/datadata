@@ -229,3 +229,30 @@ def test_existing_gate_error_cannot_be_promoted(tmp_path: Path):
     assert result["verdict"] == "INVALID"
     assert result["release_ready"] is False
     assert result["error_codes"] == ["A5_CONTEXT_PROVENANCE_MISSING"]
+
+
+def test_raw_invalid_verdict_cannot_be_promoted_without_explicit_error_code(tmp_path: Path):
+    report = _write_case(
+        tmp_path,
+        unsupported=1,
+        unsupported_records=[_benign("PRIVATE-1")],
+        issues=[
+            {
+                "severity": "WARNING",
+                "code": "A1_UNSUPPORTED_RECORDS_PRESENT",
+                "detail": "synthetic",
+            }
+        ],
+    )
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    payload["status"] = "FAIL"
+    payload["verdict"] = "INVALID"
+    payload["release_ready"] = False
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = evaluate_release_policy(report)
+
+    assert result["base_gate_verdict"] == "INVALID"
+    assert result["error_codes"] == []
+    assert result["verdict"] == "INVALID"
+    assert result["release_ready"] is False
