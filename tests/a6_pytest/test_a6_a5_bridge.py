@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from a6.a5_bridge import a5_available, check_local_a5_provider, run_local_a5
+from a6.a5_bridge import (
+    a5_available,
+    check_local_a5_provider,
+    default_a5_cache_path,
+    run_local_a5,
+)
 from a6.data import analysis_packet, demo_messages
 
 
@@ -13,7 +19,7 @@ def test_a5_available_returns_boolean():
     assert isinstance(a5_available(), bool)
 
 
-def test_run_local_a5_uses_packet_adapter_preflight_and_returns_execution(monkeypatch):
+def test_run_local_a5_validates_before_preflight_then_uses_chunk_orchestrator(monkeypatch, tmp_path):
     package = ModuleType("analyzazprav")
     a5 = ModuleType("analyzazprav.a5_ai")
     providers = ModuleType("analyzazprav.a5_ai.providers")
@@ -26,9 +32,15 @@ def test_run_local_a5_uses_packet_adapter_preflight_and_returns_execution(monkey
             calls.append("packet")
             return cls()
 
-    class FakeBuilder:
-        def __init__(self, source):
-            assert isinstance(source, FakePacketSource)
+    def fake_candidate(packet):
+        assert packet["schema_version"] == 1
+        calls.append("candidate")
+        return "candidate"
+
+    class FakeCache:
+        def __init__(self, path):
+            calls.append("cache")
+            assert Path(path) == tmp_path / "a5.sqlite"
 
     class FakeProvider:
         def __init__(self, model_name, *, base_url, preflight_timeout_seconds=5.0):
@@ -49,43 +61,49 @@ def test_run_local_a5_uses_packet_adapter_preflight_and_returns_execution(monkey
                 }
             )
 
-    class FakeResult:
+    class FakeExecution:
         def to_dict(self):
-            return {"summary": "ok", "overall_confidence": 0.9}
+            return {
+                "status": "completed",
+                "context_hash": "hash-1",
+                "error": None,
+                "result": {"summary": "ok", "overall_confidence": 0.9},
+                "chunking": {
+                    "enabled": True,
+                    "chunk_count": 2,
+                    "selected_message_count": 121,
+                    "evidence_chunk_size": 120,
+                    "synthesis_used": True,
+                    "synthesis_status": "completed",
+                    "chunks": [],
+                },
+            }
 
-    class FakeAnalyzer:
-        def __init__(self, *, context_builder, provider, cache):
-            assert isinstance(context_builder, FakeBuilder)
-            assert isinstance(provider, FakeProvider)
-            assert cache is None
-
-        def analyze(self, request, candidate):
-            calls.append("analyze")
-            assert request == "request"
-            assert candidate == "candidate"
-            return SimpleNamespace(
-                status=SimpleNamespace(value="completed"),
-                context_hash="hash-1",
-                error=None,
-                result=FakeResult(),
-            )
-
-    def fake_candidate(packet):
-        return "candidate"
-
-    def fake_request(packet, *, analysis_type, mode, user_question):
+    def fake_chunked(
+        packet,
+        *,
+        provider,
+        analysis_type,
+        mode,
+        user_question,
+        cache,
+        force_refresh,
+    ):
+        calls.append("analyze")
+        assert isinstance(provider, FakeProvider)
+        assert isinstance(cache, FakeCache)
         assert analysis_type == "segment"
         assert mode == "blind"
         assert user_question == "question"
-        return "request"
+        assert force_refresh is True
+        return FakeExecution()
 
     a5.A6PacketMessageSource = FakePacketSource
-    a5.AIAnalyzer = FakeAnalyzer
+    a5.AnalysisCache = FakeCache
     a5.AnalysisMode = lambda value: value
     a5.AnalysisType = lambda value: value
-    a5.ContextBuilder = FakeBuilder
+    a5.analyze_a6_packet_chunked = fake_chunked
     a5.candidate_from_a6_packet = fake_candidate
-    a5.request_from_a6_packet = fake_request
     providers.OllamaProvider = FakeProvider
 
     monkeypatch.setitem(sys.modules, "analyzazprav", package)
@@ -98,14 +116,24 @@ def test_run_local_a5_uses_packet_adapter_preflight_and_returns_execution(monkey
         analysis_type="segment",
         mode="blind",
         user_question="question",
+        force_refresh=True,
+        cache_path=tmp_path / "a5.sqlite",
     )
-    assert execution == {
-        "status": "completed",
-        "context_hash": "hash-1",
-        "error": None,
-        "result": {"summary": "ok", "overall_confidence": 0.9},
-    }
+    assert execution["status"] == "completed"
+    assert execution["chunking"]["chunk_count"] == 2
+    assert calls.index("packet") < calls.index("preflight")
+    assert calls.index("candidate") < calls.index("preflight")
     assert calls.index("preflight") < calls.index("analyze")
+
+
+def test_default_a5_cache_path_is_private_and_configurable(monkeypatch, tmp_path):
+    configured = tmp_path / "private-cache" / "a5.sqlite"
+    monkeypatch.setenv("ANALYZA_ZPRAV_A5_CACHE", str(configured))
+
+    path = default_a5_cache_path()
+
+    assert path == configured.resolve()
+    assert path.parent.is_dir()
 
 
 def test_check_local_a5_provider_returns_structured_ready_status(monkeypatch):

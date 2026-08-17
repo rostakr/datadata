@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any, Mapping
 
 
@@ -76,6 +78,20 @@ def check_local_a5_provider(
     }
 
 
+def default_a5_cache_path() -> Path:
+    """Return the private local A5 cache path outside the public repository."""
+
+    configured = os.environ.get("ANALYZA_ZPRAV_A5_CACHE")
+    path = (
+        Path(configured).expanduser()
+        if configured
+        else Path.home() / ".datadata" / "cache" / "a5.sqlite"
+    )
+    path = path.resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def run_local_a5(
     packet: Mapping[str, Any],
     *,
@@ -84,50 +100,49 @@ def run_local_a5(
     analysis_type: str = "segment",
     mode: str = "blind",
     user_question: str | None = None,
+    force_refresh: bool = False,
+    cache_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run A5 explicitly through local Ollama only.
 
-    The A5 packet adapter validates membership and source provenance before the
-    provider is constructed. The provider then verifies the local Ollama server
-    and exact requested model via ``/api/tags`` before any evidence prompt can be
-    sent to ``/api/chat``. No cloud fallback is attempted.
+    Production A6 packet/provenance validation happens before provider/network
+    work. Ollama preflight then verifies the exact local model via ``/api/tags``
+    before any evidence reaches ``/api/chat``. Large explicit selections are
+    deterministically chunked and synthesized by A5; no cloud fallback exists.
     """
 
     try:
         from analyzazprav.a5_ai import (
             A6PacketMessageSource,
-            AIAnalyzer,
+            AnalysisCache,
             AnalysisMode,
             AnalysisType,
-            ContextBuilder,
+            analyze_a6_packet_chunked,
             candidate_from_a6_packet,
-            request_from_a6_packet,
         )
         from analyzazprav.a5_ai.providers import OllamaProvider
     except ImportError as exc:
         raise A5Unavailable("A5 modul není v aktuálním checkoutu nainstalovaný.") from exc
 
-    # All packet/provenance validation happens before local provider/network work.
-    source = A6PacketMessageSource.from_packet(packet)
-    candidate = candidate_from_a6_packet(packet)
-    request = request_from_a6_packet(
+    # Fail closed on packet/membership/source provenance before provider/network work.
+    A6PacketMessageSource.from_packet(packet)
+    candidate_from_a6_packet(packet)
+
+    provider = OllamaProvider(model_name, base_url=base_url)
+    # /api/tags carries model inventory only; no evidence or message text.
+    provider.preflight()
+
+    local_cache = Path(cache_path).expanduser().resolve() if cache_path else default_a5_cache_path()
+    local_cache.parent.mkdir(parents=True, exist_ok=True)
+    cache = AnalysisCache(local_cache)
+
+    execution = analyze_a6_packet_chunked(
         packet,
+        provider=provider,
         analysis_type=AnalysisType(analysis_type),
         mode=AnalysisMode(mode),
         user_question=user_question or None,
+        cache=cache,
+        force_refresh=force_refresh,
     )
-    provider = OllamaProvider(model_name, base_url=base_url)
-    # Fail closed before /api/chat. /api/tags carries no evidence or message text.
-    provider.preflight()
-    analyzer = AIAnalyzer(
-        context_builder=ContextBuilder(source),
-        provider=provider,
-        cache=None,
-    )
-    execution = analyzer.analyze(request, candidate)
-    return {
-        "status": execution.status.value,
-        "context_hash": execution.context_hash,
-        "error": execution.error,
-        "result": execution.result.to_dict() if execution.result is not None else None,
-    }
+    return execution.to_dict()

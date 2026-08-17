@@ -31,6 +31,7 @@ _CURRENT_DB_PATH: str | None = None
 _ORIGINAL_SOURCE = _legacy.source
 _ORIGINAL_CHARTS = _legacy.charts
 _ORIGINAL_SIGNIFICANT_PERIODS = _legacy.significant_periods
+_ORIGINAL_RENDER_A5_EXECUTION = _legacy.render_a5_execution
 
 
 def source():
@@ -192,6 +193,46 @@ def significant_periods(findings, conversation_frame, period_start, period_end, 
     )
 
 
+def render_a5_execution(execution: dict, conversation_frame, db_path: str | None) -> None:
+    chunking = execution.get("chunking") if isinstance(execution, dict) else None
+    if isinstance(chunking, dict):
+        chunk_count = int(chunking.get("chunk_count") or 0)
+        selected_count = int(chunking.get("selected_message_count") or 0)
+        chunk_size = int(chunking.get("evidence_chunk_size") or 0)
+        if chunk_count > 1:
+            _legacy.st.info(
+                f"A5 zpracovala {selected_count} evidence zpráv v {chunk_count} bounded částech "
+                f"(max. {chunk_size} evidence na část) a výsledek následně syntetizovala."
+            )
+            rows = []
+            for item in chunking.get("chunks") or []:
+                if not isinstance(item, dict):
+                    continue
+                rows.append(
+                    {
+                        "část": item.get("chunk_index"),
+                        "evidence": item.get("evidence_count"),
+                        "stav": item.get("status"),
+                    }
+                )
+            if rows:
+                with _legacy.st.expander("Průběh bounded A5 částí"):
+                    _legacy.st.dataframe(
+                        _legacy.pd.DataFrame(rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    _legacy.st.caption(
+                        "Syntéza dostává pouze validované dílčí závěry a jejich evidence IDs; "
+                        "celý raw kontext se do syntézního promptu neposílá."
+                    )
+        elif chunk_count == 1:
+            _legacy.st.caption(
+                f"A5 zpracovala výběr jako jednu bounded část ({selected_count} evidence zpráv)."
+            )
+    return _ORIGINAL_RENDER_A5_EXECUTION(execution, conversation_frame, db_path)
+
+
 def _render_local_provider_preflight() -> None:
     """Expose a zero-evidence Ollama readiness check in the A6 sidebar."""
 
@@ -248,6 +289,7 @@ _legacy.analysis_packet = analysis_packet
 _legacy.render_evidence_ref = render_evidence_ref
 _legacy.charts = charts
 _legacy.significant_periods = significant_periods
+_legacy.render_a5_execution = render_a5_execution
 
 
 def main():

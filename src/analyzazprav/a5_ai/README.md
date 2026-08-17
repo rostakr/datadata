@@ -4,7 +4,7 @@ A5 is the interpretive layer of Analyzazprav. It never replaces deterministic A2
 
 ## Core guarantees
 
-- local-first provider abstraction; Ollama is the default implementation
+- local-first provider abstraction; Ollama is the production local implementation
 - deterministic candidate selection before AI inference
 - chronological context with physical blind-mode cutoffs
 - bounded context reduction that preserves explicit evidence
@@ -12,10 +12,11 @@ A5 is the interpretive layer of Analyzazprav. It never replaces deterministic A2
 - cache keyed by context, analysis type, mode, provider/model and prompt version
 - every material claim must resolve to supplied source evidence
 - invalid or duplicate evidence IDs fail closed
+- no cloud fallback
 
 ## Evidence chain
 
-The model is allowed to cite only existing message IDs and existing deterministic metric references. After validation, A5 enriches those references from `AnalysisContext` with the authoritative message timestamp, sender ID, safe excerpt and metric value. The model therefore cannot invent provenance metadata.
+The model is allowed to cite only existing message IDs and existing deterministic metric references. After validation, A5 enriches those references from `AnalysisContext` with the authoritative message timestamp, membership, source provenance, sender ID, safe excerpt and metric value. The model therefore cannot invent provenance metadata.
 
 Assertion-bearing synthesis retains A6-compatible text fields with parallel source-derived evidence refs:
 
@@ -25,7 +26,8 @@ Assertion-bearing synthesis retains A6-compatible text fields with parallel sour
 - `participant_p2` + `participant_p2_evidence`
 - `shared_dynamic` + `shared_dynamic_evidence`
 
-Prompt/cache contract: `a5-v3-assertion-evidence`.
+Ordinary analysis prompt/cache contract: `a5-v4-provenance-reduction`.
+Chunk synthesis prompt/cache contract: `a5-v1-validated-chunk-synthesis`.
 
 ## A2 handoff
 
@@ -52,11 +54,28 @@ The chunk size deliberately leaves room inside the 180-message A5 context budget
 
 Lexical topic candidates remain explicitly lexical (`lexical_ngram_v1`). A5 may interpret their surrounding message evidence, but the candidate itself is not promoted to semantic truth.
 
-## A6 handoff
+## A6 live local handoff
 
-`integration_a6.py` accepts A6 `analysis_packet` schema v1. Selected message IDs become explicit manual evidence and can produce both an A5 request and a bounded message source. Duplicate packet message IDs or duplicate selected IDs are rejected.
+`integration_a6.py` accepts A6 `analysis_packet` schema v1. Selected message IDs become explicit manual evidence. Duplicate packet message IDs, duplicate selected IDs, mixed conversations or incomplete required provenance are rejected before provider/network work.
 
-The current A6 PR renderer already consumes the finalized parallel evidence fields through its assertion/evidence drill-down path, so no additional A5-side compatibility shim is needed.
+`orchestrator.py` is the production A6 execution path:
+
+1. validate the complete A6 packet and provenance;
+2. order selected evidence chronologically;
+3. split selections larger than 120 messages into lossless chunks of at most 120 evidence messages;
+4. run each chunk through the existing `ContextBuilder(max_messages=180)`, `AIAnalyzer` and validator;
+5. stop fail-closed if any chunk fails;
+6. for multiple successful chunks, send only validated chunk-level claims plus their cited message IDs to a synthesis call;
+7. validate final synthesis citations against a local validation-only context containing only IDs already cited by validated chunk outputs;
+8. rematerialize final message evidence from canonical A6 packet data, including membership/source provenance.
+
+The synthesis provider prompt never contains the complete A6 packet or the original full/raw message context. It receives already validated model claims and evidence IDs only. The validation-only context is never serialized into the provider prompt.
+
+`a6/a5_bridge.py` performs Ollama `/api/tags` preflight once before evidence is sent to `/api/chat`. The exact requested model must already be installed locally. There is no automatic model pull and no cloud fallback.
+
+A5 results are cached in a private local SQLite cache outside the repository, defaulting to `~/.datadata/cache/a5.sqlite`. `ANALYZA_ZPRAV_A5_CACHE` may override the path. Cache hits preserve the same materialized membership/source and metric provenance as fresh results.
+
+A6 renders a privacy-safe chunk summary (`část`, evidence count, status) and then the same structured final result/evidence/source drill-down used for ordinary one-chunk analysis.
 
 ## Golden deterministic E2E slice
 
@@ -66,10 +85,12 @@ The current A6 PR renderer already consumes the finalized parallel evidence fiel
 
 The test proves that the same canonical message IDs survive from the A4 finding through source-derived A5 evidence and into the A6 handoff. It also verifies deterministic metric evidence (`conflict_score`) and source-derived sender/timestamp/excerpt data without any external AI service.
 
-`tests/a5_ai/test_a4_topic_chunking.py` separately verifies that oversized lexical-topic evidence is chronologically partitioned without loss or duplication and that every resulting chunk stays within the bounded A5 context contract.
+`tests/a5_ai/test_a4_topic_chunking.py` verifies that oversized A4 lexical-topic evidence is chronologically partitioned without loss or duplication and that every resulting chunk stays within the bounded A5 context contract.
 
-This is intentionally a CI-safe golden integration slice. A7 PR #11 has been notified of the finalized A5 contract and this golden handoff. The final project release gate still requires the stacked A1→A7 pipeline to be assembled and independently reconciled by A7 on the integrated database.
+`tests/a5_ai/test_a6_chunked_orchestrator.py` verifies the real A6 execution boundary with synthetic data: 250 selected messages become `120 + 120 + 10`, the synthesis prompt contains no original raw message text, final synthesis cannot cite an ID absent from validated chunk evidence, and a failing chunk prevents synthesis.
+
+`tests/a5_ai/test_cache_provenance.py` verifies that cache hits preserve materialized evidence provenance.
 
 ## Failure isolation
 
-If the model is unavailable, times out or produces invalid evidence, A5 returns an explicit failure status. A1–A4 and A6 remain usable; AI is enrichment, never a data-path dependency.
+If the model is unavailable, times out, a chunk fails, synthesis cites invalid evidence or model JSON cannot be repaired, A5 returns an explicit failure status. A1–A4 and the non-AI parts of A6 remain usable; AI is enrichment, never a data-path dependency.

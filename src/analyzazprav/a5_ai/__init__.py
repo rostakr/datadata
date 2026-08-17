@@ -36,6 +36,13 @@ from .models import (
     MessageRecord,
     MetricEvidence,
 )
+from .orchestrator import (
+    A5_CONTEXT_MESSAGE_LIMIT,
+    A6_EVIDENCE_CHUNK_SIZE,
+    ChunkedAnalysisExecution,
+    analyze_a6_packet_chunked,
+    chunk_a6_packet,
+)
 from .selector import CandidateSelector
 
 __all__ = [
@@ -47,6 +54,8 @@ __all__ = [
     "candidate_from_a4_topic", "message_from_a4",
     "A6PacketError", "A6PacketMessageSource", "candidate_from_a6_packet",
     "messages_from_a6_packet", "request_from_a6_packet",
+    "A5_CONTEXT_MESSAGE_LIMIT", "A6_EVIDENCE_CHUNK_SIZE",
+    "ChunkedAnalysisExecution", "analyze_a6_packet_chunked", "chunk_a6_packet",
     "AIAnalysisRequest", "AIAnalysisResult", "AnalysisCandidate", "AnalysisContext",
     "AnalysisExecution", "AnalysisMode", "AnalysisStatus", "AnalysisType",
     "CandidateDisposition", "EvidenceRef", "MessageEvidence", "MetricEvidence",

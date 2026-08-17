@@ -113,6 +113,28 @@ nebo přímo:
 streamlit run app.py
 ```
 
+## Lokální AI přes Ollama
+
+A6 obsahuje skutečné lokální A5 spuštění v záložce **Analýza**. Nejprve vyberte zprávy ručně nebo použijte evidence A4 nálezu / lexikálního tématu. Potom zvolte lokální Ollama model a spusťte **Spustit A5 lokálně přes Ollama**.
+
+Ollama musí běžet lokálně na zadané URL a zvolený model musí být předem nainstalovaný. A6 před odesláním evidence provede `/api/tags` preflight. Model se automaticky nestahuje a neexistuje cloud fallback.
+
+A5 nikdy neposílá celý archiv do jednoho modelového promptu:
+
+- explicitní evidence je chronologicky dělena po maximálně `120` zprávách,
+- každý chunk používá maximálně `180` message context,
+- všechny chunky dohromady zachovají původní selected evidence právě jednou,
+- chyba kteréhokoli chunku zastaví analýzu fail-closed,
+- více validních chunků se syntetizuje pouze z již validovaných dílčích závěrů a jejich message IDs,
+- kompletní/raw message context se do syntézního promptu neposílá,
+- finální evidence se znovu validuje a materializuje z canonical dat a provenance.
+
+Výsledek se zobrazuje ve stejném A6 UI jako strukturované pozorování, interpretace, vzorce, alternativní vysvětlení a nejistoty s evidence/source drill-downem. U vícedílné analýzy UI navíc zobrazí privacy-safe počet částí, počet evidence zpráv a stav každé části.
+
+Lokální výsledky se cachují mimo repozitář v `~/.datadata/cache/a5.sqlite`. Cestu lze přepsat proměnnou `ANALYZA_ZPRAV_A5_CACHE`.
+
+Podrobný A5 kontrakt: [`src/analyzazprav/a5_ai/README.md`](src/analyzazprav/a5_ai/README.md).
+
 ## Reálný Apple Messages archiv
 
 Kompletní read-only gate bez automatického spuštění UI lze spustit samostatně:
