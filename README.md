@@ -34,12 +34,38 @@ Při konfliktu dokumentace má přednost `PROJECT_SPEC.md` a canonical kontrakty
 - významný závěr musí být dohledatelný ke zprávám, metrikám a provenance,
 - změna není hotová bez testu/validace a bez relevantního A7 gate.
 
-## Instalace
+## Vývojové prostředí
+
+Společné příkazy pro lokální vývoj, Codespaces i CI jsou v `Makefile`:
 
 ```bash
-python -m pip install -r requirements.txt
-pytest -q
+make setup
+make test
+make compile
+make check
 ```
+
+Pro kompletní vývojové prostředí včetně Playwright Chromium:
+
+```bash
+make setup-dev
+```
+
+### GitHub Codespaces
+
+`.devcontainer/devcontainer.json` připraví Python 3.11, nainstaluje vývojové závislosti, spustí `make check` a A6 viewport smoke test. Při každém startu Codespace se automaticky spustí Streamlit na portu `8501` a GitHub port otevře jako preview.
+
+Ruční příkazy v Codespace:
+
+```bash
+make check
+make ui
+make a6-smoke
+```
+
+Stejné příkazy jsou dostupné také jako VS Code Tasks.
+
+**Codespaces je vývojové a QA prostředí, ne úložiště skutečného osobního archivu.** Do Codespaces ani do repozitáře nenahrávat skutečný `chat.db`, osobní zprávy, přílohy ani soukromý canonical `messages.sqlite`. Reálný archiv se zpracovává pouze na důvěryhodném lokálním stroji.
 
 ## Nejjednodušší lokální spuštění
 
@@ -47,6 +73,12 @@ Pokud už existuje canonical `messages.sqlite`:
 
 ```bash
 python -m tools.local_app --database /cesta/messages.sqlite
+```
+
+nebo přes společný příkaz:
+
+```bash
+make a6-launch DATABASE=/cesta/messages.sqlite
 ```
 
 Přímo z Apple Messages `chat.db`:
@@ -69,7 +101,13 @@ Launcher pouze skládá existující `tools.real_archive_gate` a A6. RAW archiv 
 
 Verdict `INVALID` UI nespustí. Stav `NEEDS_REVIEW` lze otevřít pouze jako explicitní lokální kontrolu; samotným otevřením se verdict nemění na `VALID`.
 
-Pro vývoj lze A6 spustit také samostatně a zdroj dat zvolit ručně:
+Pro vývoj lze A6 spustit také samostatně:
+
+```bash
+make ui
+```
+
+nebo přímo:
 
 ```bash
 streamlit run app.py
@@ -86,9 +124,39 @@ python -m tools.real_archive_gate \
   --target EXACT_TARGET
 ```
 
-`EXACT_TARGET` nahraďte pouze přesnou canonical/source identitou z lokálního archivu. Resolver nikdy fuzzy nevybere conversation. Pokud target není přesná canonical/source identita, další běh se provede s explicitním `--conversation-id`.
+Stejný lokální gate je dostupný přes `Makefile`:
+
+```bash
+make a6-gate-local \
+  CHAT_DB=/cesta/k/chat.db \
+  WORKDIR=/cesta/k/novemu-prazdnemu-workdir \
+  TARGET=EXACT_TARGET
+```
+
+A gate + následné lokální A6 UI:
+
+```bash
+make a6-launch-archive-local \
+  CHAT_DB=/cesta/k/chat.db \
+  TARGET=EXACT_TARGET
+```
+
+Tyto `*-local` targety úmyslně odmítnou běh uvnitř GitHub Codespaces.
+
+`EXACT_TARGET` nahraďte pouze přesnou canonical/source identitou z lokálního archivu. Resolver nikdy fuzzy nevybere conversation. Pokud target není přesná canonical/source identita, další běh se provede s explicitním `CONVERSATION_ID` / `--conversation-id`.
 
 Podrobný kontrakt: [`docs/A0_REAL_ARCHIVE_GATE.md`](docs/A0_REAL_ARCHIVE_GATE.md).
+
+## CI pro A6
+
+Workflow `.github/workflows/a6-tests.yml` používá stejné příkazy jako Codespaces:
+
+```bash
+make check
+make a6-smoke
+```
+
+Navíc validuje JSON konfiguraci Codespaces/VS Code a ukládá viewport evidence jako GitHub Actions artifact.
 
 ## Soukromí
 
