@@ -101,6 +101,7 @@ def evaluate_release_policy(report_path: str | Path) -> dict[str, Any]:
 
     warning_codes = set(str(code) for code in (base.get("warning_codes") or []))
     error_codes = set(str(code) for code in (base.get("error_codes") or []))
+    base_verdict = str(base.get("gate_verdict") or "UNKNOWN").upper()
 
     if unsupported_policy["present"]:
         if (
@@ -126,7 +127,7 @@ def evaluate_release_policy(report_path: str | Path) -> dict[str, Any]:
     elif unsupported_policy["present"] and "review_a1_unsupported_records_locally" not in actions:
         actions.append("review_a1_unsupported_records_locally")
 
-    if error_codes:
+    if base_verdict == "INVALID" or error_codes:
         status = "FAIL"
         verdict = "INVALID"
     elif warning_codes:
@@ -156,6 +157,7 @@ def evaluate_release_policy(report_path: str | Path) -> dict[str, Any]:
             "raw_gate_report_unchanged",
             "unreferenced_attachment_rows_are_audit_only",
             "broken_or_unknown_unsupported_records_remain_release_blocking",
+            "raw_invalid_verdict_can_never_be_promoted",
         ],
     }
 
