@@ -42,9 +42,13 @@ The current A4 contract is used as a deterministic candidate index. A5 adapters 
 - `TopicCandidate` → `lexical_topic`
 - `AnalyticMessage` → bounded A5 message context
 
-All A4 `source_message_ids` are preserved as A5 evidence IDs. A4 metric names, directions and regime labels remain deterministic source signals; A5 does not silently reinterpret them as motives or psychological facts.
+A4 metric names, directions and regime labels remain deterministic source signals; A5 does not silently reinterpret them as motives or psychological facts.
 
-`A4SQLiteCandidateSource` additionally reads the published `analysis_a4_*` SQLite views directly in read-only mode. Malformed JSON and duplicate source IDs fail closed. Missing optional views only disable that candidate type.
+For ordinary candidates, all A4 `source_message_ids` are preserved directly as A5 evidence IDs. An oversized `lexical_topic` is the one intentional structural exception: the authoritative A4 topic row and its complete `source_message_ids` remain unchanged, while `A4SQLiteCandidateSource` creates a deterministic chronological partition for A5. Each chunk contains at most 120 explicit evidence messages, keeps `candidate_type=lexical_topic`, carries stable parent/chunk metadata, and all chunks together must cover the original A4 evidence exactly once. No evidence is sampled or silently discarded, and the global `ContextBuilder.max_messages` limit is not increased.
+
+The chunk size deliberately leaves room inside the 180-message A5 context budget for neighboring context around explicit evidence. `ContextBuilder` still treats every evidence ID inside an individual chunk as an absolute constraint.
+
+`A4SQLiteCandidateSource` reads the published `analysis_a4_*` SQLite views directly in read-only mode. Malformed JSON and duplicate source IDs fail closed. Missing optional views only disable that candidate type. Oversized topic chunking also fails closed if any topic evidence ID cannot be resolved to a timestamped canonical analytical message.
 
 Lexical topic candidates remain explicitly lexical (`lexical_ngram_v1`). A5 may interpret their surrounding message evidence, but the candidate itself is not promoted to semantic truth.
 
@@ -61,6 +65,8 @@ The current A6 PR renderer already consumes the finalized parallel evidence fiel
 `A4 analysis_a4_events -> A4SQLiteCandidateSource -> A2 analysis_messages -> ContextBuilder -> StaticProvider -> validated A5 result -> A6 analysis_packet candidate`
 
 The test proves that the same canonical message IDs survive from the A4 finding through source-derived A5 evidence and into the A6 handoff. It also verifies deterministic metric evidence (`conflict_score`) and source-derived sender/timestamp/excerpt data without any external AI service.
+
+`tests/a5_ai/test_a4_topic_chunking.py` separately verifies that oversized lexical-topic evidence is chronologically partitioned without loss or duplication and that every resulting chunk stays within the bounded A5 context contract.
 
 This is intentionally a CI-safe golden integration slice. A7 PR #11 has been notified of the finalized A5 contract and this golden handoff. The final project release gate still requires the stacked A1→A7 pipeline to be assembled and independently reconciled by A7 on the integrated database.
 
