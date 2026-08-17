@@ -70,7 +70,7 @@ python -m tools.real_archive_review \
   --report /PRIVATE/WORKDIR/real_archive_report.json
 ```
 
-Classifier čte pouze lokální `real_archive_report.json` a odpovídající `a1_staging/manifest.json`. Na stdout nevypisuje lokální cesty, conversation IDs, kontakty, message text ani názvy příloh.
+Classifier čte pouze lokální `real_archive_report.json`, odpovídající `a1_staging/manifest.json` a pokud existuje také A1 `reconciliation.json`. Na stdout nevypisuje lokální cesty, conversation IDs, kontakty, message text, source identifiers ani názvy příloh.
 
 Attachment stav má tři hodnoty:
 
@@ -78,7 +78,11 @@ Attachment stav má tři hodnoty:
 - `UNVERIFIED_NO_ROOT` — unresolved attachments existují, ale při původním gate nebyl dodán `--attachments-root`; pro skutečné ověření je nutný nový gate run s explicitním rootem;
 - `UNRESOLVED_WITH_ROOT` — root byl dodán a některé attachment occurrence zůstaly unresolved; ty je nutné zkontrolovat lokálně.
 
-Classifier současně uvádí pouze privacy-safe kategorie pro `unsupported` A1 records a A5 quality warnings. Nezvyšuje `NEEDS_REVIEW` na `VALID`, nepřepisuje `real_archive_report.json` a není náhradou za A7 gate.
+Pro A1 unsupported records classifier seskupuje pouze známé, statické dvojice `record_type + reason` definované reconciliation kontraktem a přidává jejich počet. Neznámý nebo budoucí důvod se nikdy nevypíše doslova a spadne do `OTHER`. `source_identifier`, message ID, attachment ID ani chat ID se do výstupu nekopírují.
+
+A5 quality warnings se převádějí pouze na neutrální kategorie, například `UNKNOWN_TIMESTAMPS`, `EVIDENCE_EXCEEDS_CONTEXT_LIMIT`, `LEGACY_SOURCE_PROVENANCE`, `MISSING_EVIDENCE`, `MISSING_SOURCE_PROVENANCE` nebo `OTHER`. Původní detail warningu se nevypisuje.
+
+Classifier nezvyšuje `NEEDS_REVIEW` na `VALID`, nepřepisuje `real_archive_report.json` a není náhradou za A7 gate.
 
 ## Ochrana dat
 
