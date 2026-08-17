@@ -15,7 +15,6 @@ from tools.a6_real_data_ui_qa import (
     _database_label,
     _free_port,
     _private_values,
-    _select_finding_in_ui,
     _select_target_context,
     _wait_for_health,
 )
@@ -25,15 +24,8 @@ _LOCAL_DATABASE_ENV = "ANALYZA_ZPRAV_DB"
 _LOCAL_CONVERSATION_ENV = "ANALYZA_ZPRAV_CONVERSATION_ID"
 
 
-def _exercise_real_interactions_v3(
-    page: Any,
-    target: Any,
-    timeout_ms: int,
-    stage_ref: dict[str, str],
-) -> dict[str, bool]:
-    """Exercise the real A6 flow while exposing only privacy-safe stage names."""
-
-    checks = {
+def _empty_interaction_checks() -> dict[str, bool]:
+    return {
         "period_control": False,
         "conversation_messages": False,
         "a4_metrics": False,
@@ -42,16 +34,66 @@ def _exercise_real_interactions_v3(
         "analysis_packet": False,
     }
 
+
+def _active_tabpanel(page: Any) -> Any:
+    """Return the currently visible Streamlit tab panel.
+
+    Streamlit keeps multiple tab bodies in the DOM, so global text locators can
+    legitimately match content in more than one tab and trigger Playwright
+    strict-mode errors. Acceptance checks are therefore scoped to the visible
+    tab panel.
+    """
+
+    return page.locator('[role="tabpanel"]:visible').first
+
+
+def _select_finding_in_ui_v3(
+    page: Any,
+    target: Any,
+    timeout_ms: int,
+    stage_ref: dict[str, str],
+) -> None:
+    """Select the deterministic A4 finding without relying on pointer hit testing."""
+
+    panel = _active_tabpanel(page)
+    stage_ref["value"] = "finding_select_wait"
+    combobox = panel.get_by_role("combobox", name="Analytický nález", exact=True)
+    combobox.wait_for(state="visible", timeout=timeout_ms)
+
+    # React-Aria/Streamlit selectbox wrappers can intercept pointer events at
+    # narrow viewports. Keyboard activation avoids that presentation-layer
+    # hit-testing problem while still exercising the real interactive widget.
+    stage_ref["value"] = "finding_select_open"
+    combobox.focus()
+    combobox.press("ArrowDown")
+
+    stage_ref["value"] = "finding_select_option"
+    option = page.get_by_role("option", name=target.finding_option_label, exact=True)
+    option.wait_for(state="visible", timeout=timeout_ms)
+    option.click(timeout=timeout_ms, force=True)
+    page.wait_for_timeout(900)
+
+
+def _exercise_real_interactions_v3(
+    page: Any,
+    target: Any,
+    timeout_ms: int,
+    stage_ref: dict[str, str],
+    checks: dict[str, bool],
+) -> dict[str, bool]:
+    """Exercise the real A6 flow while exposing only privacy-safe stage names."""
+
     stage_ref["value"] = "period_control"
     checks["period_control"] = page.get_by_text("Období", exact=True).count() > 0
 
     # Konverzace is the default active tab. Do not perform a redundant click on
     # the already-selected tab; verify its real rendered content instead.
     stage_ref["value"] = "conversation_content"
-    page.get_by_text("Vybrat zprávy pro analýzu", exact=True).wait_for(
+    panel = _active_tabpanel(page)
+    panel.get_by_text("Vybrat zprávy pro analýzu", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    page.get_by_text("membership_id:", exact=False).first.wait_for(
+    panel.get_by_text("membership_id:", exact=False).first.wait_for(
         state="visible", timeout=timeout_ms
     )
     checks["conversation_messages"] = True
@@ -59,7 +101,8 @@ def _exercise_real_interactions_v3(
     stage_ref["value"] = "graphs_tab_click"
     page.get_by_role("tab", name="Grafy", exact=True).click(timeout=timeout_ms)
     stage_ref["value"] = "graphs_content"
-    page.get_by_text("Zdroj metrik: A4 latest-run views", exact=False).first.wait_for(
+    panel = _active_tabpanel(page)
+    panel.get_by_text("Zdroj metrik: A4 latest-run views", exact=False).first.wait_for(
         state="visible", timeout=timeout_ms
     )
     checks["a4_metrics"] = True
@@ -67,13 +110,14 @@ def _exercise_real_interactions_v3(
     stage_ref["value"] = "significant_periods_tab_click"
     page.get_by_role("tab", name="Významná období", exact=True).click(timeout=timeout_ms)
     stage_ref["value"] = "finding_select"
-    _select_finding_in_ui(page, target, timeout_ms)
+    _select_finding_in_ui_v3(page, target, timeout_ms, stage_ref)
     stage_ref["value"] = "finding_provenance"
-    page.get_by_text("Message source provenance", exact=True).first.wait_for(
+    panel = _active_tabpanel(page)
+    panel.get_by_text("Message source provenance", exact=True).first.wait_for(
         state="visible", timeout=timeout_ms
     )
     stage_ref["value"] = "finding_evidence_button"
-    button = page.get_by_role(
+    button = panel.get_by_role(
         "button",
         name="Použít evidence tohoto nálezu pro AI analýzu",
         exact=True,
@@ -86,10 +130,11 @@ def _exercise_real_interactions_v3(
     stage_ref["value"] = "selected_messages_tab_click"
     page.get_by_role("tab", name="Vybrané zprávy", exact=True).click(timeout=timeout_ms)
     stage_ref["value"] = "selected_messages_content"
-    page.get_by_text("Aktivní zdroj výběru: A4 nález", exact=True).wait_for(
+    panel = _active_tabpanel(page)
+    panel.get_by_text("Aktivní zdroj výběru: A4 nález", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    page.get_by_text("Message source provenance", exact=True).first.wait_for(
+    panel.get_by_text("Message source provenance", exact=True).first.wait_for(
         state="visible", timeout=timeout_ms
     )
     checks["selected_evidence"] = True
@@ -97,13 +142,14 @@ def _exercise_real_interactions_v3(
     stage_ref["value"] = "analysis_tab_click"
     page.get_by_role("tab", name="Analýza", exact=True).click(timeout=timeout_ms)
     stage_ref["value"] = "analysis_content"
-    page.get_by_text("Aktivní zdroj výběru: A4 nález", exact=True).wait_for(
+    panel = _active_tabpanel(page)
+    panel.get_by_text("Aktivní zdroj výběru: A4 nález", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    page.get_by_text("A6 neposílá celý archiv do AI.", exact=False).first.wait_for(
+    panel.get_by_text("A6 neposílá celý archiv do AI.", exact=False).first.wait_for(
         state="visible", timeout=timeout_ms
     )
-    page.get_by_text("Lokální AI analýza", exact=True).wait_for(
+    panel.get_by_text("Lokální AI analýza", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
     checks["analysis_packet"] = True
@@ -188,7 +234,7 @@ def run_real_data_ui_qa_v3(
                     page.on("pageerror", lambda exc, bucket=page_errors: bucket.append(type(exc).__name__))
                     screenshot_name: str | None = None
                     metrics: dict[str, Any] = {}
-                    interaction_checks: dict[str, bool] = {}
+                    interaction_checks = _empty_interaction_checks()
                     interaction_stage = {"value": "not_started"}
                     failure_stage = "navigate"
                     try:
@@ -221,11 +267,12 @@ def run_real_data_ui_qa_v3(
                             errors.append("tab_labels_mismatch")
 
                         failure_stage = "real_interactions"
-                        interaction_checks = _exercise_real_interactions_v3(
+                        _exercise_real_interactions_v3(
                             page,
                             target,
                             timeout_ms,
                             interaction_stage,
+                            interaction_checks,
                         )
                         for name, passed in interaction_checks.items():
                             if not passed:
