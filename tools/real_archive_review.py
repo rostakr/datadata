@@ -27,6 +27,15 @@ _ALLOWED_UNSUPPORTED_REASONS: dict[str, set[str]] = {
     },
 }
 
+_ALLOWED_A5_CANDIDATE_TYPES = {
+    "conflict",
+    "change_point",
+    "engagement_signal",
+    "dyadic_regime",
+    "lexical_topic",
+    "manual_selection",
+}
+
 
 def _read_object(path: Path) -> dict[str, Any]:
     try:
@@ -129,6 +138,33 @@ def _a5_categories(report: Mapping[str, Any]) -> list[str]:
     return sorted(categories)
 
 
+def _a5_candidate_counts(report: Mapping[str, Any]) -> list[dict[str, Any]]:
+    probe = report.get("a5_probe") or {}
+    if not isinstance(probe, Mapping):
+        return []
+    checked = probe.get("checked") or []
+    if not isinstance(checked, list):
+        return []
+
+    result: list[dict[str, Any]] = []
+    for item in checked:
+        if not isinstance(item, Mapping):
+            continue
+        candidate_type = str(item.get("candidate_type") or "")
+        if candidate_type not in _ALLOWED_A5_CANDIDATE_TYPES:
+            candidate_type = "OTHER"
+        result.append(
+            {
+                "candidate_type": candidate_type,
+                "context_message_count": _count(item.get("context_message_count")),
+                "available_message_count": _count(item.get("available_message_count")),
+                "omitted_message_count": _count(item.get("omitted_message_count")),
+                "evidence_message_count": _count(item.get("evidence_message_count")),
+            }
+        )
+    return result
+
+
 def classify_review(report_path: str | Path) -> dict[str, Any]:
     """Classify a local real-archive gate result without exposing private identifiers or paths."""
 
@@ -161,6 +197,7 @@ def classify_review(report_path: str | Path) -> dict[str, Any]:
     error_codes = _issue_codes(report, "ERROR")
     a5_warning_codes = [code for code in warning_codes if code.startswith("A5_")]
     a5_categories = _a5_categories(report)
+    a5_candidate_counts = _a5_candidate_counts(report)
     unsupported_grouping_status, unsupported_groups = _unsupported_groups(reconciliation)
 
     if missing_attachments == 0:
@@ -183,7 +220,7 @@ def classify_review(report_path: str | Path) -> dict[str, Any]:
         actions.append("resolve_gate_errors_before_release")
 
     return {
-        "contract": "real-archive-review-v2",
+        "contract": "real-archive-review-v3",
         "gate_status": str(report.get("status") or "UNKNOWN"),
         "gate_verdict": str(report.get("verdict") or "UNKNOWN"),
         "release_ready": bool(report.get("release_ready")),
@@ -205,6 +242,7 @@ def classify_review(report_path: str | Path) -> dict[str, Any]:
                 "present": bool(a5_warning_codes),
                 "warning_codes": a5_warning_codes,
                 "categories": a5_categories,
+                "candidate_counts": a5_candidate_counts,
             },
         },
         "recommended_actions": actions,
@@ -217,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Classify an existing local real_archive_report.json into privacy-safe NEEDS_REVIEW categories. "
             "The command never prints local paths, conversation IDs, contacts, message text, source identifiers, "
-            "or attachment names."
+            "candidate IDs, or attachment names."
         ),
     )
     parser.add_argument("--report", required=True, type=Path)

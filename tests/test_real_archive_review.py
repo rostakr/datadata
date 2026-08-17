@@ -14,6 +14,7 @@ def _write_case(
     unsupported: int = 0,
     issues: list[dict[str, str]] | None = None,
     unsupported_records: list[dict[str, object]] | None = None,
+    a5_checked: list[dict[str, object]] | None = None,
 ) -> Path:
     staging = root / "a1_staging"
     staging.mkdir(parents=True)
@@ -43,6 +44,7 @@ def _write_case(
                 "issues": issues or [],
                 "selector": {"conversation_id": 999},
                 "source": {"path": "/private/example/chat.db"},
+                "a5_probe": {"checked": a5_checked or []},
             }
         ),
         encoding="utf-8",
@@ -66,7 +68,7 @@ def test_missing_attachments_without_root_are_unverified(tmp_path: Path):
 
     result = classify_review(report)
 
-    assert result["contract"] == "real-archive-review-v2"
+    assert result["contract"] == "real-archive-review-v3"
     assert result["gate_verdict"] == "NEEDS_REVIEW"
     assert result["release_ready"] is False
     assert result["review"]["attachments"] == {
@@ -171,6 +173,7 @@ def test_review_summary_groups_known_unsupported_and_redacts_identifiers(tmp_pat
         "present": True,
         "warning_codes": ["A5_CONTEXT_QUALITY_WARNING"],
         "categories": ["UNKNOWN_TIMESTAMPS"],
+        "candidate_counts": [],
     }
     assert result["recommended_actions"] == [
         "review_a1_unsupported_records_locally",
@@ -224,3 +227,61 @@ def test_a5_unknown_details_remain_other(tmp_path: Path):
     assert result["review"]["a5_quality"]["categories"] == ["OTHER"]
     assert "/private/example" not in serialized
     assert "999" not in serialized
+
+
+def test_a5_candidate_counts_are_allowlisted_and_private_fields_are_redacted(tmp_path: Path):
+    report = _write_case(
+        tmp_path,
+        attachment_root=None,
+        missing=0,
+        issues=[
+            {
+                "severity": "WARNING",
+                "code": "A5_CONTEXT_QUALITY_WARNING",
+                "detail": "A5 selected 240 messages although max_messages=180 because candidate evidence is never silently removed.",
+            }
+        ],
+        a5_checked=[
+            {
+                "candidate_type": "lexical_topic",
+                "context_message_count": 240,
+                "available_message_count": 510,
+                "omitted_message_count": 270,
+                "evidence_message_count": 240,
+                "candidate_id": "PRIVATE-CANDIDATE-ID",
+                "message_id": "PRIVATE-MESSAGE-ID",
+                "path": "/private/example/secret",
+            },
+            {
+                "candidate_type": "future-private-type",
+                "context_message_count": "8",
+                "available_message_count": "9",
+                "omitted_message_count": "1",
+                "evidence_message_count": "2",
+                "candidate_id": "PRIVATE-OTHER-ID",
+            },
+        ],
+    )
+
+    result = classify_review(report)
+    serialized = json.dumps(result, ensure_ascii=False)
+
+    assert result["review"]["a5_quality"]["categories"] == ["EVIDENCE_EXCEEDS_CONTEXT_LIMIT"]
+    assert result["review"]["a5_quality"]["candidate_counts"] == [
+        {
+            "candidate_type": "lexical_topic",
+            "context_message_count": 240,
+            "available_message_count": 510,
+            "omitted_message_count": 270,
+            "evidence_message_count": 240,
+        },
+        {
+            "candidate_type": "OTHER",
+            "context_message_count": 8,
+            "available_message_count": 9,
+            "omitted_message_count": 1,
+            "evidence_message_count": 2,
+        },
+    ]
+    assert "PRIVATE-" not in serialized
+    assert "/private/example" not in serialized
