@@ -422,6 +422,28 @@ def _analysis_type(candidate_type: str):
     }.get(candidate_type, AnalysisType.SEGMENT)
 
 
+def _select_a5_probe_candidates(candidates: Sequence[Any]) -> list[Any]:
+    """Select one candidate per type, but every chunk of the first lexical-topic parent."""
+
+    selected: list[Any] = []
+    seen_types: set[str] = set()
+    lexical_parent: str | None = None
+    for candidate in candidates:
+        candidate_type = str(candidate.candidate_type)
+        if candidate_type == "lexical_topic":
+            parent = str(candidate.metadata.get("parent_candidate_id") or candidate.id)
+            if lexical_parent is None:
+                lexical_parent = parent
+            if parent == lexical_parent:
+                selected.append(candidate)
+            continue
+        if candidate_type in seen_types:
+            continue
+        seen_types.add(candidate_type)
+        selected.append(candidate)
+    return selected
+
+
 def _a5_probe(database: Path, conversation_id: int) -> dict[str, Any]:
     from analyzazprav.a5_ai.context_builder import ContextBuilder
     from analyzazprav.a5_ai.integration_a2 import A2SQLiteMessageSource
@@ -429,10 +451,7 @@ def _a5_probe(database: Path, conversation_id: int) -> dict[str, Any]:
     from analyzazprav.a5_ai.models import AIAnalysisRequest, AnalysisMode
 
     candidates = list(A4SQLiteCandidateSource(database).candidates(str(conversation_id)))
-    by_type: dict[str, Any] = {}
-    for candidate in candidates:
-        by_type.setdefault(candidate.candidate_type, candidate)
-    selected = list(by_type.values())
+    selected = _select_a5_probe_candidates(candidates)
     manual_probe = False
     if not selected:
         selected = [_manual_a5_candidate(database, conversation_id)]
@@ -482,12 +501,16 @@ def _a5_probe(database: Path, conversation_id: int) -> dict[str, Any]:
                 "omitted_message_count": context.omitted_message_count,
                 "evidence_message_count": len(context.evidence_message_ids),
                 "a4_provenance_status": candidate.metadata.get("a4_provenance_status"),
+                "evidence_chunk_index": candidate.metadata.get("evidence_chunk_index"),
+                "evidence_chunk_count": candidate.metadata.get("evidence_chunk_count"),
             }
         )
     return {
         "status": "PASS",
         "stored_candidate_count": len(candidates),
-        "checked_candidate_type_count": len(checked),
+        "checked_candidate_count": len(checked),
+        "checked_candidate_type_count": len({str(item["candidate_type"]) for item in checked}),
+        "lexical_topic_chunk_count": sum(1 for item in checked if item["candidate_type"] == "lexical_topic"),
         "manual_probe": manual_probe,
         "checked": checked,
         "quality_warnings": list(dict.fromkeys(quality_warnings)),
