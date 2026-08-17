@@ -55,6 +55,7 @@ a6-launch:
 a6-gate-local:
 	@if [ -n "$$CODESPACES" ]; then echo "Refusing real chat.db processing in Codespaces; run this target on the trusted local machine." >&2; exit 2; fi
 	@test -n "$(CHAT_DB)" || (echo "CHAT_DB=/path/to/chat.db is required" >&2; exit 2)
+	@test -n "$(WORKDIR)" || (echo "WORKDIR=/new/empty/private/run-dir is required" >&2; exit 2)
 	@if [ -n "$(TARGET)" ]; then \
 		$(PYTHON) -m tools.real_archive_gate --chat-db "$(CHAT_DB)" --workdir "$(WORKDIR)" --target "$(TARGET)"; \
 	elif [ -n "$(CONVERSATION_ID)" ]; then \
