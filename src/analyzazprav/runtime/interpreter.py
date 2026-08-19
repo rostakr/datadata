@@ -12,14 +12,49 @@ from .models import (
     require_mapping,
 )
 
-PROMPT_VERSION = "runtime-v2-compact-1"
+PROMPT_VERSION = "runtime-v2-compact-2"
 ALLOWED_KINDS = {"observation", "pattern", "interpretation", "uncertainty"}
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
 MAX_CLAIMS = 8
 
-SYSTEM_PROMPT = """You interpret a small evidence pack from a message conversation.
-Return JSON only: {"summary":"...","claims":[{"kind":"observation|pattern|interpretation|uncertainty","text":"...","evidence":["E1"],"confidence":"low|medium|high"}]}.
-Use only evidence labels present in the input. Every claim must cite at least one label. Separate direct observations from interpretations. Do not diagnose a person or state hidden motives as facts. Prefer uncertainty when evidence is limited. Keep the answer concise; maximum 8 claims."""
+OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "summary": {"type": "string", "minLength": 1, "maxLength": 800},
+        "claims": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": MAX_CLAIMS,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["observation", "pattern", "interpretation", "uncertainty"],
+                    },
+                    "text": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "evidence": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "uniqueItems": True,
+                        "items": {"type": "string", "pattern": "^E[1-9][0-9]*$"},
+                    },
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                    },
+                },
+                "required": ["kind", "text", "evidence", "confidence"],
+            },
+        },
+    },
+    "required": ["summary", "claims"],
+}
+
+SYSTEM_PROMPT = """Interpret the supplied message evidence. Return only the requested JSON structure. Use only E-labels present in the input and cite evidence for every claim. Separate observation from interpretation, do not diagnose people or state hidden motives as facts, and use uncertainty when evidence is limited. Be concise."""
 
 
 class CompactProvider(Protocol):
@@ -47,6 +82,8 @@ def _parse_claim(value: Any, *, index: int, allowed_labels: set[str]) -> Claim:
         raise RuntimeValidationError(f"claims[{index}].kind is invalid")
     if not text:
         raise RuntimeValidationError(f"claims[{index}].text is empty")
+    if len(text) > 500:
+        raise RuntimeValidationError(f"claims[{index}].text is too long")
     if confidence not in ALLOWED_CONFIDENCE:
         raise RuntimeValidationError(f"claims[{index}].confidence is invalid")
     if not isinstance(evidence_raw, list) or not evidence_raw:
@@ -77,10 +114,12 @@ def interpret_pack(pack: EvidencePack, *, provider: CompactProvider) -> Interpre
     summary = str(result.get("summary") or "").strip()
     if not summary:
         raise RuntimeValidationError("provider result summary is empty")
+    if len(summary) > 800:
+        raise RuntimeValidationError("provider result summary is too long")
 
     raw_claims = result.get("claims")
-    if not isinstance(raw_claims, list):
-        raise RuntimeValidationError("provider result claims must be an array")
+    if not isinstance(raw_claims, list) or not raw_claims:
+        raise RuntimeValidationError("provider result claims must be a non-empty array")
     if len(raw_claims) > MAX_CLAIMS:
         raise RuntimeValidationError(f"provider result exceeds {MAX_CLAIMS} claims")
 
