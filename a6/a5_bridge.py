@@ -102,6 +102,7 @@ def run_local_a5(
     user_question: str | None = None,
     force_refresh: bool = False,
     cache_path: str | Path | None = None,
+    inference_timeout_seconds: float = 120.0,
 ) -> dict[str, Any]:
     """Run A5 explicitly through local Ollama only.
 
@@ -109,6 +110,7 @@ def run_local_a5(
     work. Ollama preflight then verifies the exact local model via ``/api/tags``
     before any evidence reaches ``/api/chat``. Large explicit selections are
     deterministically chunked and synthesized by A5; no cloud fallback exists.
+    ``inference_timeout_seconds`` controls only the local ``/api/chat`` request.
     """
 
     try:
@@ -128,7 +130,11 @@ def run_local_a5(
     A6PacketMessageSource.from_packet(packet)
     candidate_from_a6_packet(packet)
 
-    provider = OllamaProvider(model_name, base_url=base_url)
+    provider = OllamaProvider(
+        model_name,
+        base_url=base_url,
+        timeout_seconds=inference_timeout_seconds,
+    )
     # /api/tags carries model inventory only; no evidence or message text.
     provider.preflight()
 
