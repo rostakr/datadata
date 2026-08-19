@@ -7,6 +7,7 @@ SMOKE_OUTPUT ?= artifacts/a6-viewport-smoke
 OLLAMA_URL ?= http://localhost:11434
 A5_ANALYSIS_TYPE ?= segment
 A5_MODE ?= blind
+A5_TIMEOUT_SECONDS ?= 120
 
 .PHONY: setup setup-dev test compile check ui a6-smoke a5-accept-local a6-launch a6-gate-local a6-launch-archive-local
 
@@ -63,6 +64,7 @@ a5-accept-local:
 		--packet "$(PACKET)" \
 		--model "$(MODEL)" \
 		--base-url "$(OLLAMA_URL)" \
+		--timeout-seconds "$(A5_TIMEOUT_SECONDS)" \
 		--analysis-type "$(A5_ANALYSIS_TYPE)" \
 		--mode "$(A5_MODE)"
 

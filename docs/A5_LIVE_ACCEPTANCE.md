@@ -69,7 +69,20 @@ Volitelně lze změnit:
 OLLAMA_URL=http://localhost:11434
 A5_ANALYSIS_TYPE=segment
 A5_MODE=blind
+A5_TIMEOUT_SECONDS=120
 ```
+
+`A5_TIMEOUT_SECONDS` je timeout jednoho lokálního Ollama `/api/chat` inference requestu. Výchozí hodnota zůstává `120` sekund. Na pomalejším CPU-only stroji lze použít například:
+
+```bash
+make a5-accept-local \
+  DATABASE=/cesta/messages.sqlite \
+  PACKET=/cesta/a5-context.json \
+  MODEL=qwen3:8b \
+  A5_TIMEOUT_SECONDS=900
+```
+
+Delší timeout nemění evidence/provenance pravidla ani fail-closed acceptance kontrakt; pouze dává lokálnímu modelu více času na dokončení stejného inference requestu.
 
 Přímý CLI ekvivalent:
 
@@ -77,7 +90,8 @@ Přímý CLI ekvivalent:
 python -m tools.a5_live_acceptance \
   --database /cesta/messages.sqlite \
   --packet /cesta/a5-context.json \
-  --model qwen3:8b
+  --model qwen3:8b \
+  --timeout-seconds 900
 ```
 
 ## Výsledek
