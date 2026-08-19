@@ -15,9 +15,27 @@ SOURCE_SNAPSHOT = "private-source-snapshot-key-001"
 PRIVATE_TEXT = "very private synthetic message text"
 
 
-def _database(tmp_path, *, snapshot_key: str = SOURCE_SNAPSHOT):
+def _database(
+    tmp_path,
+    *,
+    snapshot_key: str = SOURCE_SNAPSHOT,
+    membership_id: str = MEMBERSHIP_ID,
+):
     path = tmp_path / "messages.sqlite"
     conn = sqlite3.connect(path)
+    conn.execute(
+        """
+        CREATE TABLE analysis_messages (
+            membership_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO analysis_messages(membership_id, id, conversation_id) VALUES (?, ?, ?)",
+        (membership_id, MESSAGE_ID, CONVERSATION_ID),
+    )
     conn.execute(
         """
         CREATE TABLE analysis_message_sources (
@@ -151,6 +169,19 @@ def test_live_acceptance_fails_closed_on_source_provenance_drift(tmp_path):
 
     assert report["verdict"] == "FAIL"
     assert report["reconciliation"]["STALE"] == 1
+    assert "EVIDENCE_RECONCILIATION_NOT_PASS" in report["failure_reasons"]
+
+
+def test_live_acceptance_fails_closed_on_current_membership_drift(tmp_path):
+    report = build_live_acceptance_report(
+        _execution(),
+        _packet(),
+        database=_database(tmp_path, membership_id="different-current-membership"),
+        model_name="qwen3:8b",
+    )
+
+    assert report["verdict"] == "FAIL"
+    assert report["reconciliation"]["FAIL"] == 1
     assert "EVIDENCE_RECONCILIATION_NOT_PASS" in report["failure_reasons"]
 
 
