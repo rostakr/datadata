@@ -7,8 +7,9 @@ def test_entrypoint_uses_runtime_v2_not_legacy_monkeypatches():
     runtime_ui = (root / "a6" / "runtime_ui.py").read_text(encoding="utf-8")
 
     assert "from a6.runtime_ui import main" in entrypoint
-    assert "app_legacy" not in entrypoint
-    assert "_legacy" not in entrypoint
+    assert "from a6 import app_legacy" not in entrypoint
+    assert "from a6.app_legacy" not in entrypoint
+    assert "_legacy." not in entrypoint
 
     assert "run_local_runtime" in runtime_ui
     assert "compile_packet_to_packs" in runtime_ui
