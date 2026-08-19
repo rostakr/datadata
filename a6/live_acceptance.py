@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
+import sqlite3
 from typing import Any, Mapping
 
 from a6.evidence import (
@@ -56,23 +57,67 @@ def _evidence_refs(result: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
     return refs
 
 
-def _packet_message_rows(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
-    raw_messages = packet.get("messages")
-    if not isinstance(raw_messages, list):
+def _load_current_message_rows(
+    database: str | Path,
+    message_ids: list[str],
+) -> list[dict[str, str]]:
+    """Read current canonical membership identity directly from A2, read-only."""
+
+    if not message_ids:
         return []
-    rows: list[dict[str, Any]] = []
-    for item in raw_messages:
-        row = _mapping(item)
-        if row is None:
-            continue
-        rows.append(
-            {
-                "message_id": row.get("message_id"),
-                "membership_id": row.get("membership_id"),
-                "conversation_id": row.get("conversation_id"),
-            }
-        )
-    return rows
+    path = Path(database).expanduser().resolve()
+    if not path.is_file():
+        raise PacketProvenanceError("A2 database does not exist")
+
+    placeholders = ",".join("?" for _ in message_ids)
+    uri = f"file:{path.as_posix()}?mode=ro"
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        objects = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
+            ).fetchall()
+        }
+        if "analysis_messages" not in objects:
+            raise PacketProvenanceError("A2 analysis_messages view is missing")
+        columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(analysis_messages)").fetchall()
+        }
+        required = {"membership_id", "id", "conversation_id"}
+        if not required.issubset(columns):
+            raise PacketProvenanceError("A2 analysis_messages membership contract is incomplete")
+        rows = conn.execute(
+            f"""
+            SELECT
+                CAST(membership_id AS TEXT) AS membership_id,
+                CAST(id AS TEXT) AS message_id,
+                CAST(conversation_id AS TEXT) AS conversation_id
+            FROM analysis_messages
+            WHERE CAST(id AS TEXT) IN ({placeholders})
+            ORDER BY CAST(id AS TEXT), CAST(conversation_id AS TEXT), CAST(membership_id AS TEXT)
+            """,
+            message_ids,
+        ).fetchall()
+    except PacketProvenanceError:
+        raise
+    except sqlite3.Error as exc:
+        raise PacketProvenanceError("A2 current membership query failed") from exc
+    finally:
+        if "conn" in locals():
+            conn.close()
+
+    return [
+        {
+            "membership_id": str(row["membership_id"]),
+            "message_id": str(row["message_id"]),
+            "conversation_id": str(row["conversation_id"]),
+        }
+        for row in rows
+    ]
 
 
 def _safe_int(value: Any) -> int:
@@ -93,9 +138,14 @@ def build_live_acceptance_report(
 
     The report deliberately contains no message/conversation/membership/source
     identifiers, message text, local paths, context hashes or model output.
-    Evidence is reconciled against the current A2 source provenance, but only
-    aggregate counts and allowlisted status categories leave this function.
+    Evidence is reconciled against current A2 membership and source provenance,
+    while only aggregate counts and allowlisted status categories leave this
+    function. ``packet`` is retained in the API because it is the exact input
+    whose execution is being accepted; current identity is never trusted from
+    the packet itself.
     """
+
+    del packet  # Never use a possibly stale packet as the current A2 identity oracle.
 
     execution_status = str(execution.get("status") or "unknown")
     result = _mapping(execution.get("result"))
@@ -131,7 +181,7 @@ def build_live_acceptance_report(
     if message_refs:
         try:
             current_sources = load_current_message_provenance(database, unique_ids)
-            current_rows = _packet_message_rows(packet)
+            current_rows = _load_current_message_rows(database, unique_ids)
             for ref in message_refs:
                 reconciliation = reconcile_a5_evidence_ref(ref, current_rows, current_sources)
                 reconciliation_counts[reconciliation.status] += 1
