@@ -1,184 +1,167 @@
-# A0 — Stav projektu a integrační fronta
+# Operativní stav projektu — Runtime v2
 
-Aktualizováno: 2026-08-19
+Aktualizováno: 2026-08-20
 
-Tento dokument je **operativní stav**, nikoliv druhá architektonická specifikace. Autorita projektu je `PROJECT_SPEC.md` v kořeni repozitáře.
+Tento dokument je operativní stav, nikoliv druhá architektonická specifikace. Autorita projektu je `PROJECT_SPEC.md`.
+
+Historické označení A0–A7 zůstává pouze pro orientaci v existujícím kódu a CI workflow během migrace. Produkční runtime je Runtime v2.
 
 ## Cílový repozitář
 
 - Repository: `rostakr/datadata`
 - Default branch: `main`
-- Repozitář je veřejný: skutečný osobní archiv, zprávy, přílohy, lokální real-archive reporty, AI cache a secrets se nesmí commitovat.
+- Repozitář je veřejný.
+- Skutečný osobní archiv, zprávy, přílohy, lokální real-archive reporty, evidence packy, AI cache a secrets se nesmí commitovat.
 
-Aktuální exact SHA se záměrně nehardcoduje do tohoto stavového dokumentu. Release autoritu má Git historie a A7 exact-SHA workflow pro konkrétní commit.
+Exact SHA se zde nehardcoduje. Release autoritu má Git historie a exact-SHA QA workflow konkrétního commitu.
 
-## Ověřený reálný Apple Messages vertical slice
+## Ověřený základ
 
-Private real-archive acceptance proběhla lokálně bez publikace osobních dat.
+Před migrací Runtime v2 prošel lokální real-archive vertical slice těmito vrstvami:
 
-Ověřený řetězec:
+- source SQLite integrity,
+- read-only import/reconciliation,
+- canonical SQLite ingest,
+- membership/source provenance,
+- processing/participant resolution,
+- deterministická analytika,
+- canonical UI read model,
+- browser matrix,
+- exact-SHA QA gates.
 
-- source SQLite integrity: PASS,
-- A1 import/reconciliation: PASS pro podporované message/conversation/attachment relace,
-- A2 canonical ingest + provenance + integrity: PASS,
-- A3 processing/participant resolution: PASS,
-- A4 deterministic analytics: PASS,
-- A5 bounded context/evidence/provenance: PASS,
-- A6 canonical packet/provenance: PASS,
-- A6 desktop + iPhone portrait + iPhone landscape private browser matrix: PASS,
-- A7 vertical reconciliation/exact-SHA release gates: PASS.
-
-Canonical cílová konverzace měla při fyzické acceptance `10 869` memberships a `10 869` canonical messages; identifikátor konverzace ani osobní obsah se do veřejného repozitáře nezapisuje.
+Runtime v2 tyto ověřené vrstvy nepřepisuje. Mění zejména AI execution boundary a hlavní UI tok.
 
 ## RAW completeness vs. analysis readiness
 
 RAW gate report zůstává autoritativní a nikdy se nepřepisuje.
 
-Aktuální soukromý RAW verdict je `NEEDS_REVIEW`, protože historická media vrstva není fyzicky úplná. Privacy-safe lokální attachment audit prokázal:
+Známá soukromá media limitation zůstává external-data omezením; systém nesmí tvrdit, že analyzoval fyzický obsah příloh, které nejsou na lokálním stroji dostupné.
 
-- `79` referencovaných attachment occurrences nemá na aktuálním lokálním stroji dostupný binární soubor,
-- všech `79` skončilo jako `NOT_FOUND`,
-- žádná z nich nebyla obnovitelná percent/Unicode normalizací,
-- žádný unikátní relokovaný basename kandidát nebyl nalezen,
-- žádná ambiguity nebyla nalezena,
-- resolver-fix signal není přítomen.
+Canonical text/metadata readiness a fyzická attachment completeness jsou nadále oddělené verdicts.
 
-Současně `21` orphan attachment metadata rows není referencováno žádnou `message_attachment_join` relací. Reconciliation je dál eviduje, ale release-policy je klasifikuje jako audit-only/nonblocking; nejde o ztracené message rows ani broken attachment relace.
+## Produkční Runtime v2
 
-`real_archive_release_review` v2 proto odděluje dvě pravdivá tvrzení:
+Nová cesta:
 
-- RAW archive completeness: `NEEDS_REVIEW`, media `PARTIAL`,
-- `CANONICAL_TEXT_AND_METADATA` analysis readiness: `VALID`, `release_ready=true`.
+`RAW → CANONICAL STORE → SIGNALS → EVIDENCE PACKS → INTERPRETER → ANALYSIS STORE → UI`
 
-Explicitní limitation je `REFERENCED_ATTACHMENT_BINARIES_UNAVAILABLE`. Systém nesmí tvrdit, že chybějící binární obsah analyzoval.
+### Canonical Store
 
-## A5 — plná lokální AI execution cesta
+Stávající canonical SQLite a provenance zůstávají zdrojem pravdy. AI nevytváří canonical identitu ani source provenance.
 
-A5 používá pouze lokální provider. Produkční implementace je Ollama přes `http://localhost:11434` nebo explicitně zadanou lokální URL.
+### Signal Engine
 
-Před jakýmkoli evidence promptem:
+Stávající deterministické analytické views/findings se používají jako candidate index. AI není potřeba pro metriky, změny rytmu ani další deterministické signály.
 
-1. A6 packet/membership/source provenance musí projít validací,
-2. Ollama `/api/tags` preflight musí potvrdit přesně požadovaný lokální model,
-3. žádný cloud fallback se nesmí spustit.
+### Evidence Compiler
 
-### Bounded execution
+Selected evidence se dělí podle skutečné velikosti provider payloadu (`max_input_chars`), nikoli podle fixního počtu zpráv.
 
-Skutečné A6 tlačítko pro AI používá stejný bounded princip jako A4/A5 gate:
+Provider vidí pouze:
 
-- max. `120` explicitních evidence messages na chunk,
-- max. `180` messages v provider-visible contextu jednoho chunku,
-- chronologické deterministické dělení,
-- union chunků musí pokrýt původní selected evidence právě jednou,
-- evidence se nesmí samplingem ani trimmingem ztratit,
-- chyba jediného chunku ukončí flow fail-closed.
+- krátké `E1…En` labels,
+- sender,
+- timestamp,
+- text,
+- volitelnou otázku.
 
-### Validovaná chunk synthesis
+Provider nevidí:
 
-Více úspěšných chunků se spojí druhým lokálním Ollama krokem. Synthesis prompt dostává pouze již validované chunk-level claims, uncertainty a jejich message IDs. Nedostává celý raw A6 packet ani kompletní textový kontext.
+- canonical message IDs,
+- membership IDs,
+- source record keys,
+- source snapshot keys,
+- parser/import provenance.
 
-Finální synthesis evidence může citovat pouze message IDs, které již byly citované validovanými chunk výsledky. Validator je kontroluje proti lokálnímu validation-only contextu a potom evidence znovu materializuje z canonical A6 packetu včetně membership/source provenance.
+Tato data zůstávají v lokální mapě a materializují se až po inference.
 
-### Lokální cache
+### Interpreter
 
-Fresh i cached A5 výsledek musí mít stejný provenance kontrakt. Default private cache je mimo repo:
+Produkční Interpreter:
 
-`~/.datadata/cache/a5.sqlite`
+- používá jeden inference call na evidence pack,
+- používá Ollama JSON Schema structured output,
+- u Qwen3 produkční profil vypíná thinking,
+- používá deterministickou teplotu 0,
+- omezuje maximální modelový output,
+- neprovádí automatický repair inference,
+- validuje všechny `E-label` reference proti lokálnímu packu,
+- po validaci host aplikace připojí canonical evidence a provenance.
 
-Cestu lze změnit pomocí `ANALYZA_ZPRAV_A5_CACHE`. Cache obsahuje odvozené soukromé AI evidence/results a nesmí se commitovat ani uploadovat.
+Více packů se standardně skládá deterministicky; není vyžadován další synthesis call.
 
-### Fyzická live acceptance
+## Hlavní UI
 
-Pro poslední fyzické ověření existuje samostatný lokální gate `tools.a5_live_acceptance` / `make a5-accept-local`.
+Production `app.py` používá `a6/runtime_ui.py`.
 
-Gate používá existující A6 packet a stejný `run_local_a5`/bounded orchestrátor jako UI, ale pro acceptance vždy nastaví `force_refresh=True`. Cache hit tedy nemůže být vydáván za skutečný modelový inference run.
+Běžný tok má tři části:
 
-Po inference znovu reconciliuje materializovanou A5 message evidence proti aktuální A2 membership/source provenance. Jakýkoli `STALE`, `FAIL`, `UNVERIFIED`, nedokončený chunk nebo chybějící message evidence je fail-closed. Výstup obsahuje pouze privacy-safe agregované počty a allowlisted PASS/FAIL kategorie.
+1. **Konverzace** — canonical read model bez AI.
+2. **Signály** — deterministické analytické kandidáty.
+3. **Interpretace** — ruční nebo signal-based evidence → compact Runtime v2 inference → evidence drill-down.
 
-Podrobný postup je v [`docs/A5_LIVE_ACCEPTANCE.md`](A5_LIVE_ACCEPTANCE.md).
+Starý `a6.app_legacy` zůstává pouze jako migrační/reference kód a není hlavním Streamlit entrypointem.
 
-## A6 — uživatelský end-to-end flow
+## Legacy A5
 
-Uživatel může v lokálním Streamlit UI:
+`src/analyzazprav/a5_ai/` obsahuje původní orchestrátor, ContextBuilder, repair/cache/chunk synthesis a staré integrační adaptéry.
 
-1. otevřít canonical konverzaci,
-2. zvolit období a zobrazit zprávy/metriky,
-3. otevřít A4 významný nález nebo lexikální téma,
-4. použít jeho exact evidence jako A5 selection, případně vybrat zprávy ručně,
-5. zvolit Ollama model, typ analýzy a blind/retrospective mode,
-6. spustit lokální A5,
-7. u velkého výběru vidět privacy-safe stav jednotlivých bounded částí,
-8. zobrazit finální strukturovaný výsledek,
-9. rozkliknout evidence a ověřit canonical/source provenance.
+Tyto komponenty již nejsou production execution path. Dočasně se zachovávají kvůli regresním testům a postupné migraci. Sdílený `providers/OllamaProvider` zůstává použitelný i Runtime v2.
 
-A6 neposílá osobní data do žádné cloud AI služby.
+Nové funkce se do legacy orchestrátoru nepřidávají.
 
-## Stav modulů
+## Runtime v2 live acceptance
 
-### A1 — Import dat
+Nový fyzický gate:
 
-**VALIDATED.** Read-only ingest, source identity, accounting a reconciliation jsou ověřené na reálném archivu. Známá fyzická absence historických binárních médií je explicitní external data limitation, nikoliv tichá ztráta.
+```bash
+make runtime-accept-local \
+  DATABASE=/cesta/messages.sqlite \
+  PACKET=/cesta/a5-context.json \
+  MODEL=qwen3:1.7b
+```
 
-### A2 — Normalizace a databáze
+Dočasný alias `make a5-accept-local` spouští tentýž Runtime v2 gate, nikoli starý A5 orchestrátor.
 
-**VALIDATED.** Canonical SQLite, lossless membership, timestamps, provenance a integrity prošly reálným vertical slice.
+`PASS` vyžaduje:
 
-### A3 — Zpracování a třídění
+- validní packet/canonical provenance,
+- evidence pack v provider budgetu,
+- skutečný lokální Ollama inference,
+- validní structured model output,
+- validní E-label evidence,
+- lokální materializaci canonical evidence,
+- pouze `PASS` provenance reconciliation.
 
-**VALIDATED.** Processing a participant resolution prošly bez ztráty canonical messages.
+Výstup gate je privacy-safe a nesmí obsahovat message text, IDs, source keys ani lokální paths.
 
-### A4 — Analytický engine
-
-**VALIDATED.** Deterministické metrics/findings/topics a evidence vazby jsou dostupné a ověřené na real-data read modelu.
-
-### A5 — AI analýza
-
-**IMPLEMENTED + SYNTHETICALLY VALIDATED end-to-end.** Provider, preflight, bounded context, chunking, validation, repair, cache, synthesis a evidence provenance jsou integrovány do skutečné A6 execution cesty. Poslední praktická acceptance je fyzický lokální inference run proti skutečně nainstalovanému Ollama modelu; tento run má nyní reprodukovatelný fresh-inference gate.
-
-### A6 — Rozhraní
-
-**VALIDATED.** Desktop/iPhone private real-data browser matrix je PASS. UI obsahuje skutečný local-Ollama A5 flow a evidence/source drill-down.
-
-### A7 — QA / validace
-
-**VALID.** Independent oracles, complete repository suite, compile, Streamlit smoke, A5/A6 provenance probes, browser gate a aggregate exact-SHA verdict zůstávají povinné pro každý release commit.
+Podrobnosti: [`A5_LIVE_ACCEPTANCE.md`](A5_LIVE_ACCEPTANCE.md).
 
 ## Aktuální integrační fronta
 
-Po sloučení chunked live-A5 implementace a přidání fresh live-acceptance gate zbývá jediná praktická podmínka pro označení lokální aplikace za fyzicky end-to-end ověřenou:
+Pro Runtime v2 zbývá před definitivním fyzickým release closure:
 
-**spustit jednu skutečnou A5 analýzu přes lokální Ollama model a získat privacy-safe `PASS` z `make a5-accept-local`.**
+1. sloučit Runtime v2 pouze po zeleném repository CI a browser smoke,
+2. na trusted lokálním stroji stáhnout/použít výsledný exact main SHA,
+3. spustit jeden malý reálný Runtime v2 live acceptance,
+4. získat privacy-safe `verdict=PASS` a process exit `0`,
+5. teprve potom označit nový Interpreter flow za fyzicky ověřený.
 
-Postup:
+Předchozí neúspěšné dlouhé běhy legacy A5 se nepoužívají jako release evidence pro Runtime v2.
 
-```bash
-make a6-launch DATABASE=/cesta/messages.sqlite
-```
+## QA pravidlo
 
-V A6 stáhnout lokální `a5-context.json` pro skutečně vybranou evidence a následně:
+Release commit musí mít:
 
-```bash
-make a5-accept-local \
-  DATABASE=/cesta/messages.sqlite \
-  PACKET=/cesta/a5-context.json \
-  MODEL=qwen3:8b
-```
+- kompletní repository tests/compile,
+- canonical/provenance fixtures,
+- Runtime v2 evidence/interpreter tests,
+- Streamlit browser viewport smoke,
+- exact-SHA aggregate QA verdict,
+- lokální real-archive correctness bez publikace osobních dat.
 
-Tato lokální acceptance nesmí uploadovat zprávy, A6 packet, AI cache, screenshots s osobním obsahem ani raw report. Na GitHub lze zapsat pouze privacy-safe status, model name podle potřeby, počty chunků/evidence a PASS/FAIL bez osobního obsahu.
-
-## Release pravidlo A0
-
-A0 nesmí obejít A7 ani raw gate. Release commit je integračně přijatelný pouze pokud:
-
-- complete repository tests/compile projdou,
-- A5 live-contract probe a A6 provenance fixture projdou,
-- Streamlit/browser smoke projde,
-- aggregate A7 exact-SHA verdict je zelený,
-- reálná canonical/text analysis readiness nemá nevyřešenou integrity/provenance chybu,
-- známá media limitation zůstává explicitní a není zaměněna za media completeness.
-
-Fyzický `a5-accept-local` PASS je soukromá runtime acceptance nad reálným lokálním archivem; nenahrazuje CI/A7 a CI jej na veřejných syntetických datech nesmí předstírat.
+Modelový timeout nesmí invalidovat Canonical Store ani Signal Engine. AI je interpretační enrichment, ne dependency datové správnosti.
 
 ## Hlavní zásada
 
-**Nejdříve správná data. Potom správné metriky. Až potom AI interpretace.**
+**Celý archiv zpracuje program. AI dostane jen malý důkazní balíček a pouze jej interpretuje.**
