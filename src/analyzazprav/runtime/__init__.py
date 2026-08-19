@@ -1,5 +1,11 @@
 from .evidence import EvidenceBudgetExceeded, compile_packet_to_packs
-from .interpreter import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt, interpret_pack
+from .interpreter import (
+    OUTPUT_SCHEMA,
+    PROMPT_VERSION,
+    SYSTEM_PROMPT,
+    build_user_prompt,
+    interpret_pack,
+)
 from .models import (
     Claim,
     EvidenceItem,
@@ -17,6 +23,7 @@ __all__ = [
     "EvidencePack",
     "InterpretationResult",
     "MaterializedClaim",
+    "OUTPUT_SCHEMA",
     "PROMPT_VERSION",
     "RUNTIME_SCHEMA",
     "RuntimeValidationError",
