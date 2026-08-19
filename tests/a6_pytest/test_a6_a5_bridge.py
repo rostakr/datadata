@@ -43,9 +43,10 @@ def test_run_local_a5_validates_before_preflight_then_uses_chunk_orchestrator(mo
             assert Path(path) == tmp_path / "a5.sqlite"
 
     class FakeProvider:
-        def __init__(self, model_name, *, base_url, preflight_timeout_seconds=5.0):
+        def __init__(self, model_name, *, base_url, timeout_seconds=120.0, preflight_timeout_seconds=5.0):
             assert model_name == "test-model"
             assert base_url == "http://localhost:11434"
+            assert timeout_seconds == 900.0
             self.model_name = model_name
             self.base_url = base_url
 
@@ -118,6 +119,7 @@ def test_run_local_a5_validates_before_preflight_then_uses_chunk_orchestrator(mo
         user_question="question",
         force_refresh=True,
         cache_path=tmp_path / "a5.sqlite",
+        inference_timeout_seconds=900.0,
     )
     assert execution["status"] == "completed"
     assert execution["chunking"]["chunk_count"] == 2
