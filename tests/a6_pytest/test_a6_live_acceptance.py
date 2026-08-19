@@ -212,7 +212,7 @@ def test_live_acceptance_fails_closed_when_any_chunk_is_not_completed(tmp_path):
     assert "CHUNK_NOT_COMPLETED" in report["failure_reasons"]
 
 
-def test_cli_forces_fresh_inference(monkeypatch):
+def test_cli_forces_fresh_inference_and_forwards_timeout(monkeypatch):
     packet = _packet()
     execution = _execution()
     calls = {}
@@ -233,8 +233,10 @@ def test_cli_forces_fresh_inference(monkeypatch):
         analysis_type,
         mode,
         force_refresh,
+        inference_timeout_seconds,
     ):
         calls["force_refresh"] = force_refresh
+        calls["timeout"] = inference_timeout_seconds
         assert payload is packet
         assert model_name == "test-model"
         assert base_url == "http://localhost:11434"
@@ -260,8 +262,11 @@ def test_cli_forces_fresh_inference(monkeypatch):
             "/private/a5-context.json",
             "--model",
             "test-model",
+            "--timeout-seconds",
+            "900",
         ]
     )
 
     assert rc == 0
     assert calls["force_refresh"] is True
+    assert calls["timeout"] == 900.0
