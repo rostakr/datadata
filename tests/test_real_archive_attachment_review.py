@@ -79,6 +79,17 @@ def test_audit_classifies_recoverable_and_absent_paths_without_leaking_private_v
     unicode_file.parent.mkdir(parents=True)
     unicode_file.write_bytes(b"unicode")
 
+    # macOS filesystems may resolve an NFD lookup to an NFC-created filename
+    # before the explicit Unicode-normalization branch is reached. Linux
+    # filesystems normally keep the byte-distinct names separate. Both outcomes
+    # are intentionally classified as exact/recoverable by the production audit.
+    raw_unicode_candidate = attachments_root / "bb" / nfd_name
+    unicode_category = (
+        "CURRENT_PATH_NOW_EXISTS"
+        if raw_unicode_candidate.is_file()
+        else "UNICODE_NFC_EXACT"
+    )
+
     relocated_file = attachments_root / "new" / "moved-private.jpg"
     relocated_file.parent.mkdir(parents=True)
     relocated_file.write_bytes(b"relocated")
@@ -122,9 +133,9 @@ def test_audit_classifies_recoverable_and_absent_paths_without_leaking_private_v
     assert result["resolution_category_counts"] == {
         "BASENAME_AMBIGUOUS": 1,
         "BASENAME_UNIQUE_MATCH": 1,
+        unicode_category: 1,
         "NOT_FOUND": 1,
         "PERCENT_DECODE_EXACT": 1,
-        "UNICODE_NFC_EXACT": 1,
     }
     assert result["summary"] == {
         "exact_normalization_recoverable_count": 2,
