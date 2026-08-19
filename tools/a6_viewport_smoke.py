@@ -9,12 +9,8 @@ from typing import Any
 
 EXPECTED_TABS = [
     "Konverzace",
-    "Časová osa",
-    "Grafy",
-    "Významná období",
-    "Lexikální témata",
-    "Vybrané zprávy",
-    "Analýza",
+    "Signály",
+    "Interpretace",
 ]
 
 
@@ -76,12 +72,7 @@ def _page_metrics(page: Any) -> dict[str, Any]:
 
 
 def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) -> dict[str, Any]:
-    """Run A6 demo UI smoke checks in Chromium for desktop and iPhone-sized viewports.
-
-    Playwright is imported lazily so normal repository imports/tests do not require
-    the browser dependency. This smoke deliberately uses A6 demo data only; no
-    real archive or personal content is written to CI artifacts.
-    """
+    """Run Runtime v2 demo UI smoke checks in Chromium."""
 
     try:
         from playwright.sync_api import sync_playwright
@@ -90,7 +81,7 @@ def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) 
 
     output_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {
-        "contract": "a6-browser-viewport-v2",
+        "contract": "runtime-v2-browser-viewport-v1",
         "url": url,
         "expected_tabs": EXPECTED_TABS,
         "cases": [],
@@ -126,8 +117,6 @@ def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) 
                             "tab_labels_mismatch=" + json.dumps(tab_labels, ensure_ascii=False)
                         )
 
-                    # Exercise both ends of the tab strip. This catches mobile
-                    # regressions where later tabs exist in DOM but cannot be reached.
                     for tab_name in (EXPECTED_TABS[0], EXPECTED_TABS[-1]):
                         tab = page.get_by_role("tab", name=tab_name, exact=True)
                         tab.scroll_into_view_if_needed(timeout=timeout_ms)
@@ -137,7 +126,6 @@ def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) 
 
                     metrics = _page_metrics(page)
                     overflow_px = int(metrics["page_horizontal_overflow_px"] or 0)
-                    # Nested dataframes/tab strips may scroll; the page itself must not.
                     if overflow_px > 2:
                         errors.append(f"page_horizontal_overflow_px={overflow_px}")
 
@@ -152,7 +140,7 @@ def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) 
 
                     screenshot = output_dir / f"{_safe_name(case.name)}.png"
                     page.screenshot(path=str(screenshot), full_page=True)
-                except Exception as exc:  # fail closed, preserving screenshot/report when possible
+                except Exception as exc:
                     errors.append(f"browser_check_error={type(exc).__name__}: {exc}")
                     metrics = {}
                     screenshot = output_dir / f"{_safe_name(case.name)}-failure.png"
@@ -185,7 +173,7 @@ def run_viewport_smoke(*, url: str, output_dir: Path, timeout_ms: int = 30_000) 
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="A6 Streamlit browser viewport smoke")
+    parser = argparse.ArgumentParser(description="Runtime v2 Streamlit browser viewport smoke")
     parser.add_argument("--url", default="http://127.0.0.1:8765")
     parser.add_argument("--output", type=Path, default=Path("artifacts/a6-viewport-smoke"))
     parser.add_argument("--timeout-ms", type=int, default=30_000)
