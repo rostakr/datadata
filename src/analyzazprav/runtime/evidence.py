@@ -193,10 +193,9 @@ def compile_packet_to_packs(
     index_by_id = {row["message_id"]: index for index, row in enumerate(rows)}
     packs: list[EvidencePack] = []
     for group in groups:
-        included = {row["message_id"] for row in group}
         selected_positions = [index_by_id[row["message_id"]] for row in group]
         context_candidates = [
-            row for row in rows if row["message_id"] not in included
+            row for row in rows if row["message_id"] not in selected_set
         ]
         context_candidates.sort(
             key=lambda row: (
