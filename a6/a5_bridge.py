@@ -102,15 +102,15 @@ def run_local_a5(
     user_question: str | None = None,
     force_refresh: bool = False,
     cache_path: str | Path | None = None,
-    inference_timeout_seconds: float = 120.0,
+    inference_timeout_seconds: float = 300.0,
     max_input_chars: int = 6000,
 ) -> dict[str, Any]:
     """Run Runtime v2 through local Ollama only.
 
     This function keeps the historical A6 call signature during migration, but
     the old A5 orchestrator is no longer used. Runtime v2 validates and budgets
-    evidence before provider work, sends only compact E-label evidence to one
-    inference call per pack, performs no automatic repair call, and materializes
+    evidence before provider work, sends only compact E-label evidence, performs
+    exactly one structured non-thinking inference per pack, and materializes
     canonical/provenance evidence locally after inference.
 
     ``analysis_type``, ``mode``, ``force_refresh`` and ``cache_path`` are accepted
@@ -123,6 +123,7 @@ def run_local_a5(
     try:
         from analyzazprav.a5_ai.providers import OllamaProvider
         from analyzazprav.runtime import (
+            OUTPUT_SCHEMA,
             analyze_packet,
             compile_packet_to_packs,
             to_legacy_execution,
@@ -142,6 +143,10 @@ def run_local_a5(
         model_name,
         base_url=base_url,
         timeout_seconds=inference_timeout_seconds,
+        response_format=OUTPUT_SCHEMA,
+        think=False,
+        temperature=0.0,
+        num_predict=768,
     )
     provider.preflight()
 
