@@ -1,4 +1,4 @@
-# PROJECT_SPEC — Analýza zpráv
+# PROJECT_SPEC — Analýza zpráv Runtime v2
 
 Tento soubor je **jediná autoritativní projektová a architektonická specifikace** repozitáře `rostakr/datadata`.
 
@@ -6,209 +6,298 @@ Při konfliktu platí pořadí autority:
 
 1. `PROJECT_SPEC.md`,
 2. explicitní canonical kontrakty v `docs/`,
-3. A0/A7 release a validační dokumentace,
-4. agentní prompty v `docs/agents/`,
-5. ostatní dokumentace,
-6. historický kód nebo starší návrhy.
+3. release a validační dokumentace,
+4. ostatní dokumentace,
+5. historický kód.
 
-Žádný agent nesmí vytvořit paralelní architekturu, datový model nebo novou autoritativní specifikaci mimo toto pořadí.
+Historické označení A0–A7 již není běhovou architekturou. Staré moduly mohou dočasně zůstat jako kompatibilní adaptéry během migrace, ale nesmí určovat nový runtime ani vytvářet druhý datový model.
 
-## 1. Hlavní cíl
+## 1. Cíl
 
-Vytvořit lokální, spolehlivý a auditovatelný systém pro import, zpracování, statistickou analýzu a AI interpretaci dlouhodobé osobní komunikace, primárně Apple iMessage.
+Vytvořit lokální, rychlý, auditovatelný systém pro analýzu dlouhodobé osobní komunikace, který:
 
-Výsledný systém musí umožnit:
+- jednou správně importuje a normalizuje archiv,
+- nad celou historií provede levnou deterministickou analýzu,
+- vybere pouze relevantní události a úseky,
+- sestaví malé evidence packy podle skutečného rozpočtu vstupu,
+- použije AI pouze k interpretaci těchto malých packů,
+- nikdy nenechá LLM rozhodovat o canonical identitě nebo provenance,
+- funguje i na slabším lokálním CPU,
+- umožňuje dohledat každý významný závěr ke konkrétním canonical zprávám.
 
-- import kompletní historie komunikace,
-- zachování vazby na původní zdrojová data,
-- normalizaci zpráv a příloh do jednoho canonical modelu,
-- deterministické programové analýzy,
-- detekci významných změn a období,
-- AI interpretaci pouze nad relevantním bounded contextem,
-- jednoduché lokální UI,
-- dohledání každého významného závěru ke konkrétním zprávám, metrikám a zdrojové provenance.
+Nová hlavní pipeline:
 
-Základní pipeline:
+`RAW → CANONICAL STORE → SIGNALS → EVIDENCE PACKS → INTERPRETER → ANALYSIS STORE → UI`
 
-`RAW → NORMALIZED → DERIVED → ANALYTICS → RELEVANT CONTEXT → AI ANALYSIS → UI → QA`
+QA je průřezový kontrakt nad každou hranicí, nikoli samostatný runtime stupeň.
 
-## 2. Závazné principy
+## 2. Čtyři běhové části
 
-### Data před interpretací
+### S1 — Canonical Store
 
-Nejdříve správná data, potom správné metriky, až následně AI interpretace. AI nesmí nahrazovat deterministické výpočty.
+Jediný zdroj pravdy pro normalizovaná data.
 
-### RAW je read-only
+Obsahuje:
 
-Originální importovaná data se nikdy nemění. Transformace probíhají pouze v odvozených vrstvách.
+- conversation,
+- participant,
+- message,
+- membership,
+- attachment,
+- timestamp,
+- source provenance,
+- import/reconciliation metadata.
 
-### Žádná tichá ztráta dat
+Pravidla:
 
-Každý vstupní záznam musí skončit jako zpracovaný, duplicita, explicitně nepodporovaný nebo chyba. Reconciliation se musí uzavřít.
+- RAW je read-only,
+- canonical identita se nikdy nevytváří v AI vrstvě,
+- SQLite je výchozí lokální úložiště,
+- neznámá hodnota zůstává explicitně neznámá,
+- každý canonical záznam musí být dohledatelný ke zdroji.
 
-### Provenance je povinná
+Existující funkční importní a normalizační kód se při migraci znovu nepíše bez důvodu. Runtime v2 jej používá přes stabilní read model.
 
-Každá canonical zpráva musí být dohledatelná ke zdroji. Každá odvozená metrika a každý významný AI závěr musí být dohledatelný ke canonical entitám a zdrojové evidenci.
+### S2 — Signal Engine
 
-### Jeden canonical model
+Deterministicky analyzuje celý archiv nebo zvolené období.
 
-Základní model je společný pro celý projekt:
+Počítá zejména:
 
-`conversation → participant → message → attachment → timestamp → metadata`
+- objem a frekvenci komunikace,
+- initiation,
+- response latency,
+- délku a rytmus sessions,
+- změny intenzity,
+- dlouhé mezery,
+- změny poměru účastníků,
+- konfliktní/negativní lexikální kandidáty,
+- významné change points,
+- opakující se interakční sekvence,
+- témata pouze tehdy, pokud jsou označena jako lexikální/statistická, nikoli jako psychologický fakt.
 
-Moduly nesmí vytvářet paralelní message/participant/conversation modely.
+Signal Engine **nepoužívá LLM**. Jeho výstupem jsou malé strukturované `Signal` a `Segment` záznamy s canonical message references.
 
-### Local-first a minimální disclosure
+### S3 — Evidence Compiler
 
-Osobní archiv zůstává lokálně. Externí AI nesmí automaticky dostávat celý archiv; pouze minimální relevantní kontext pro konkrétní analýzu.
+Převádí signály, segmenty nebo ruční výběr na minimální vstup pro AI.
 
-### Jednoduchost a auditovatelnost
+Evidence pack obsahuje pouze:
 
-Preferovat jednodušší, deterministické, testovatelné a snadno opravitelné řešení před frameworkovou nebo infrastrukturní složitostí.
+- krátké lokální labely `E1`, `E2`, ...,
+- chronologicky seřazený text nezbytných zpráv,
+- minimální sender/time metadata potřebná pro interpretaci,
+- relevantní deterministické metriky,
+- volitelnou otázku uživatele.
 
-### Navazovat na existující implementaci
+Evidence pack **neobsahuje source provenance payload**. Provenance zůstává lokálně v Canonical Store a připojuje se až po inference.
 
-Před změnou vždy ověřit aktuální `main`, existující kód, kontrakty a testy. Neimplementovat druhou verzi funkce, která již existuje.
+Rozpočet packu se řídí velikostí vstupu, nikoli pevným počtem zpráv. Výchozí implementace musí mít explicitní `max_input_chars` a později může použít přesný tokenizer. Pokud se segment nevejde, Evidence Compiler ho deterministicky rozdělí na menší packy se zachovaným pokrytím relevantní evidence.
 
-### Hotové = implementované + integrované + ověřené
+Každý pack musí mít lokální mapu:
 
-Za hotové se nepovažuje návrh, pseudokód, TODO, mock, nepropojená komponenta ani neotestovaný kód.
+`E-label → canonical message_id → membership_id → provenance`
 
-### Testování je součást implementace
+Tato mapa se nikdy negeneruje modelem.
 
-Každá významná změna musí mít test nebo validační mechanismus. Relevantní testy a A7 gate jsou součást Definition of Done.
+### S4 — Interpreter
 
-## 3. Datové vrstvy
+AI dostává pouze Evidence Pack a vrací malý interpretační objekt.
 
-- **L0 RAW** — neměnný zdrojový archiv a identita vstupních záznamů.
-- **L1 NORMALIZED** — canonical SQLite model s explicitní provenance.
-- **L2 DERIVED** — sessions, threads, participant resolution, klasifikace a další deterministicky odvozené struktury.
-- **L3 ANALYSIS** — metriky, kandidátní vzorce, relevantní kontext, AI výstupy a QA evidence.
+Povolený výstup:
 
-Přechod mezi vrstvami musí být auditovatelný. Odvozená vrstva nesmí zpětně měnit předchozí vrstvu.
+- `summary`,
+- `claims[]`.
 
-## 4. Čas a směr zpráv
+Každý claim obsahuje pouze:
 
-Časová a směrová informace je datově kritická.
+- `kind`: `observation | pattern | interpretation | uncertainty`,
+- `text`,
+- `evidence`: seznam labelů `E1...En`,
+- `confidence`: `low | medium | high`.
 
-- canonical čas musí zachovat přesnost bez float-roundingu,
-- UTC převody musí být deterministické,
-- lokální čas a timezone musí být explicitní, pokud jsou známy,
-- `is_from_me` je tri-state, pokud zdroj nedává jistou hodnotu; `unknown` se nesmí tiše převést na incoming nebo outgoing,
-- neznámý směr nesmí zničit nebo přepsat identitu sendera.
+LLM nesmí vracet canonical IDs, membership IDs, source record keys ani provenance. Po inference host aplikace validuje evidence labely a materializuje canonical references z lokální mapy Evidence Packu.
 
-## 5. Moduly A0–A7
+Neplatný výstup failne okamžitě. Runtime v2 **neprovádí automatický repair inference**, protože repair zdvojnásobuje latenci a komplikuje stav. Uživatel může explicitně spustit nový pokus.
 
-- **A0 — Hlavní koordinace:** architektura, priority, kontrakty, integrační pořadí, stav a release rozhodování.
-- **A1 — Import dat:** read-only ingest, staging, source identity a reconciliation.
-- **A2 — Normalizace a databáze:** canonical model, timestamps, membership, provenance a integrita.
-- **A3 — Zpracování a třídění:** sessions, threads, participant resolution a další derived struktury.
-- **A4 — Analytický engine:** deterministické metriky a kandidátní změny/vzorce.
-- **A5 — AI analýza:** bounded context, evidence chain, interpretace a explicitní nejistota.
-- **A6 — Rozhraní:** lokální UI nad canonical a analysis read modely, evidence drill-down.
-- **A7 — QA / validace:** nezávislé oracles, reconciliation, exact-SHA release gates a regresní ochrana.
+Výchozí cesta je jeden modelový call na jeden pack. Více packů se standardně skládá deterministicky do reportu; volitelná AI syntéza smí dostat pouze již validované claims a jejich lokální evidence labely, nikdy původní celý archiv.
 
-Každý modul musí mít jasné `INPUT → PROCESSING → OUTPUT` a respektovat vlastnictví kontraktů sousedních modulů.
+## 3. Analysis Store
 
-## 6. Analytický standard
+Výsledky se ukládají lokálně mimo veřejný repozitář.
 
-Výstupy vždy rozlišují:
+Každý uložený výsledek obsahuje:
 
-- **fakt** — přímo přítomný ve zdrojových/canonical datech,
-- **metrika** — deterministicky vypočítaná hodnota,
-- **vzorec** — opakovaný nebo statisticky významný jev,
-- **interpretace** — možné vysvětlení,
-- **nejistota** — omezení dat nebo alternativní vysvětlení.
+- fingerprint Evidence Packu,
+- model/provider,
+- prompt contract version,
+- čas běhu,
+- validované claims,
+- lokálně materializované canonical evidence refs,
+- stav `COMPLETED | INVALID_OUTPUT | TIMEOUT | PROVIDER_ERROR | STALE`.
 
-Interpretace nesmí být prezentována jako prokázaný fakt. AI nesmí diagnostikovat osobnost, psychickou poruchu nebo motivaci člověka jako jistou skutečnost.
+Cache klíč musí záviset na obsahu packu, modelu a verzi prompt kontraktu.
 
-## 7. AI pravidla
+## 4. Evidence a provenance
 
-A5 nesmí standardně analyzovat celý archiv. Kontext musí být připraven deterministickými vrstvami a omezen na potřebný rozsah.
+Provenance je programová vlastnost, nikoli část jazykového modelu.
 
-Významný AI závěr musí mít:
+Tok evidence:
 
-1. pozorování,
-2. evidence,
-3. interpretaci,
-4. alternativní vysvětlení,
-5. míru jistoty,
-6. strojově dohledatelné reference na zprávy/metriky/provenance.
+1. Signal/ruční výběr odkazuje na canonical message IDs.
+2. Evidence Compiler ověří existenci a membership.
+3. Model vidí pouze krátké `E-labels`.
+4. Interpreter výstup smí citovat pouze tyto labely.
+5. Host validátor odmítne neznámý/duplicitní label.
+6. Host materializuje canonical message refs a aktuální source provenance.
+7. UI provede drill-down přímo do Canonical Store.
 
-Bez evidence je závěr pouze nedoložená hypotéza a nesmí být prezentován jako výsledek systému.
+Tím se eliminuje potřeba posílat modelu dlouhé provenance JSON objekty a zároveň se zvyšuje auditovatelnost.
 
-## 8. MVP / end-to-end vertical slice
+## 5. AI prompt standard
 
-Prioritou je jeden plně funkční scénář před množstvím izolovaných funkcí:
+System prompt musí být krátký a stabilní. Nesmí obsahovat rozsáhlé prose kontrakty ani opakovat kompletní JSON schema v textu, pokud provider podporuje structured output.
 
-1. načíst iMessage data,
-2. provést read-only import a source reconciliation,
-3. normalizovat do canonical SQLite,
-4. zachovat kompletní provenance,
-5. vybrat conversation/kontakt a časové období,
-6. zobrazit skutečné zprávy,
-7. vypočítat základní metriky včetně response latency a initiation,
-8. detekovat kandidátní významná období,
-9. vytvořit relevantní bounded context,
-10. provést AI analýzu s evidence chain,
-11. zobrazit výsledek a source drill-down v UI,
-12. projít A7 exact-SHA validací.
+Model dostává:
 
-## 9. QA a release pravidlo
+- stručnou roli,
+- čtyři povolené typy claimů,
+- pravidlo evidence labels,
+- pravidlo nejistoty,
+- Evidence Pack.
 
-A7 je nezávislá validační vrstva, ne kosmetický testovací doplněk.
+Model nesmí:
 
-SHA lze označit jako release-ready pouze pokud:
+- diagnostikovat osobnost nebo poruchu jako jistý fakt,
+- tvrdit motivaci bez evidence,
+- vytvářet provenance,
+- citovat zprávu, která v packu není,
+- prezentovat deterministickou metriku jako AI objev.
 
-- povinné testy a validační komponenty jsou `VALID`,
-- reporty odkazují na stejný `contract_sha`,
-- nejsou nevyřešené integrity/provenance chyby,
-- aggregate verdict obsahuje `release_ready=true`,
-- real-archive gate, pokud je pro daný milník požadován, proběhne lokálně bez publikace osobních dat.
+## 6. UI
 
-CI syntetické fixtures nenahrazují praktickou validaci skutečného Apple Messages archivu.
+Běžný tok uživatele:
 
-## 10. Bezpečnost osobních dat
+1. otevřít canonical databázi,
+2. zvolit conversation,
+3. zobrazit timeline a deterministické signály,
+4. kliknout na signal/segment nebo ručně označit zprávy,
+5. zvolit typ otázky,
+6. spustit lokální interpretaci,
+7. zobrazit claims s evidence drill-downem.
 
-Repozitář `rostakr/datadata` je veřejný. Proto se do GitHubu nesmí commitovat:
+Export/import velkého `a5-context.json` není součástí běžného runtime. Může zůstat pouze jako debug/diagnostický nástroj.
+
+UI nesmí zobrazovat interní source provenance payload modelu, protože model jej vůbec nedostává.
+
+## 7. Model a hardware
+
+Architektura nesmí předpokládat výkonný GPU stroj.
+
+Výchozí lokální profil musí fungovat s malým modelem přibližně 1–4B parametrů a s krátkým evidence packem. Větší model je volitelná kvalitativní nadstavba, ne podmínka correctness nebo release gate.
+
+Modelová kvalita a systémová správnost jsou oddělené:
+
+- systémová správnost = canonical data, signals, evidence mapping, validace,
+- interpretační kvalita = schopnost zvoleného modelu formulovat užitečné claims.
+
+## 8. Acceptance a QA
+
+Release gate se nesmí opírat o to, zda jeden konkrétní velký LLM dokončí dlouhý prompt.
+
+Povinné vrstvy QA:
+
+### Canonical gate
+
+- read-only ingest,
+- reconciliation,
+- integrita SQLite,
+- provenance completeness.
+
+### Signal gate
+
+- deterministické fixtures,
+- přesné očekávané metriky,
+- stabilní segmentace.
+
+### Evidence gate
+
+- žádný chybějící selected message,
+- žádné mixed conversation packy,
+- budget enforcement,
+- lossless label mapping,
+- provenance materializace z canonical dat.
+
+### Interpreter contract gate
+
+- syntetický provider testuje validaci bez LLM,
+- lokální provider smoke test ověřuje dostupnost modelu a jeden malý structured-output request,
+- timeout modelu neinvaliduje Canonical Store ani Signal Engine.
+
+### Real-archive gate
+
+Reálný archiv se testuje lokálně. Do veřejného GitHubu se smějí dostat pouze privacy-safe agregované verdicts.
+
+## 9. Migrace ze starého A0–A7
+
+Mapování během přechodu:
+
+- A1 + A2 → S1 Canonical Store,
+- A3 + A4 → S2 Signal Engine,
+- A5 ContextBuilder/orchestrator → S3 Evidence Compiler + S4 Interpreter,
+- A6 → UI nad novým runtime,
+- A7 → průřezové QA gates.
+
+Starý `a5_ai` orchestrátor, chunk synthesis, repair pass a live acceptance jsou deprecated. Mohou zůstat dočasně kvůli regresním testům, ale nové funkce se do nich nepřidávají.
+
+Migrace je dokončena, až:
+
+1. hlavní UI nepoužívá starý A5 orchestrátor,
+2. nový runtime má vlastní testy,
+3. compatibility packet není nutný pro běžný provoz,
+4. staré A5 runtime soubory lze odstranit bez ztráty funkce.
+
+## 10. Bezpečnost a soukromí
+
+Repozitář je veřejný. Nikdy sem necommitovat:
 
 - skutečný `chat.db`,
 - osobní zprávy,
-- soukromé přílohy,
-- lokální inventáře skutečného archivu,
-- reporty obsahující osobní text nebo identifikátory,
-- tokeny, API klíče nebo jiné secrets.
+- osobní přílohy,
+- reálné evidence packy,
+- lokální databázové cesty,
+- source record/snapshot keys z reálného archivu,
+- model cache s osobním obsahem,
+- secrets.
 
-Testy musí používat syntetická nebo bezpečně anonymizovaná data.
+Lokální AI nemá cloud fallback.
 
-## 11. Priorita rozhodování
+## 11. Priority
 
-Při konfliktu cílů platí:
+Při konfliktu platí:
 
-1. správnost dat,
-2. úplnost dat,
-3. dohledatelnost,
-4. spolehlivost,
-5. jednoduchost,
+1. správnost canonical dat,
+2. provenance a auditovatelnost,
+3. jednoduchost,
+4. determinismus,
+5. rychlost a nízké nároky na hardware,
 6. testovatelnost,
-7. rychlost,
-8. analytická kvalita,
-9. UX,
-10. vizuální vzhled.
+7. interpretační kvalita,
+8. UX.
 
 ## 12. Definition of Done
 
 Změna je hotová pouze tehdy, když:
 
-1. vychází z aktuálního stavu `rostakr/datadata:main`,
-2. nerozbíjí vlastnictví A0–A7 ani canonical kontrakty,
-3. zachovává RAW read-only pravidlo a provenance,
-4. nemůže tiše ztratit nebo přepsat neznámá data,
-5. má odpovídající test nebo validaci,
-6. relevantní lokální/CI testy prošly,
-7. A7 exact-SHA gate nehlásí regresi,
-8. dokumentace byla aktualizována, pokud se změnil kontrakt nebo architektura.
+1. vychází z aktuálního `main`,
+2. zachovává read-only RAW a canonical provenance,
+3. nepřidává nový paralelní datový model,
+4. má deterministický test nebo validační gate,
+5. AI část není nutná pro dostupnost dat a metrik,
+6. evidence je materializována host aplikací, ne modelem,
+7. relevantní CI testy projdou,
+8. dokumentace odpovídá skutečnému runtime.
 
 ## Hlavní zásada
 
-**Nejdříve správná data. Potom správné metriky. Až potom AI interpretace.**
+**Celý archiv zpracuje program. AI dostane jen malý důkazní balíček a pouze jej interpretuje.**
