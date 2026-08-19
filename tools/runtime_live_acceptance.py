@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -13,7 +14,12 @@ from analyzazprav.a5_ai.providers import (
     ProviderTimeout,
     ProviderUnavailable,
 )
-from analyzazprav.runtime import RuntimeValidationError, analyze_packet, compile_packet_to_packs
+from analyzazprav.runtime import (
+    OUTPUT_SCHEMA,
+    RuntimeValidationError,
+    analyze_packet,
+    compile_packet_to_packs,
+)
 
 SCHEMA_VERSION = "runtime-v2-live-acceptance-v1"
 
@@ -58,6 +64,9 @@ def _load_packet(path: str | Path) -> Mapping[str, Any]:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     model = args.model
+    if os.environ.get("CODESPACES"):
+        return _report(model=model, failure_reasons=["UNTRUSTED_RUNTIME"])
+
     try:
         packet = _load_packet(args.packet)
         selected = packet.get("selected_message_ids")
@@ -74,6 +83,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         model,
         base_url=args.base_url,
         timeout_seconds=args.timeout_seconds,
+        response_format=OUTPUT_SCHEMA,
+        think=False,
+        temperature=0.0,
+        num_predict=768,
     )
     try:
         provider.preflight()
