@@ -12,6 +12,13 @@ from a6.evidence import PacketProvenanceError, enrich_analysis_packet_source_pro
 from a6.live_acceptance import build_live_acceptance_report, failed_live_acceptance_report
 
 
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -23,6 +30,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--packet", required=True, help="Local A6 a5-context.json path")
     parser.add_argument("--model", required=True, help="Exactly installed local Ollama model name")
     parser.add_argument("--base-url", default="http://localhost:11434", help="Local Ollama base URL")
+    parser.add_argument(
+        "--timeout-seconds",
+        type=_positive_float,
+        default=120.0,
+        help="Timeout for each local Ollama /api/chat inference request (default: 120)",
+    )
     parser.add_argument(
         "--analysis-type",
         default="segment",
@@ -88,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             analysis_type=args.analysis_type,
             mode=args.mode,
             force_refresh=True,
+            inference_timeout_seconds=args.timeout_seconds,
         )
     except Exception:
         # Do not echo provider/model exceptions here: they can contain local paths,
