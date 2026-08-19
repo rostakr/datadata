@@ -12,6 +12,7 @@ on:
       - 'a6/**'
       - 'src/analyzazprav/a5_ai/integration_a6.py'
       - 'src/analyzazprav/qa/a6_contract.py'
+      - 'tools/a5_live_acceptance.py'
       - 'tools/a6_viewport_smoke.py'
       - 'tools/local_app.py'
       - 'tools/real_archive_gate.py'
