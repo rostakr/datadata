@@ -38,11 +38,19 @@ class OllamaProvider:
         base_url: str = "http://localhost:11434",
         timeout_seconds: float = 120.0,
         preflight_timeout_seconds: float = 5.0,
+        response_format: str | Mapping[str, Any] = "json",
+        think: bool | str | None = None,
+        temperature: float | None = None,
+        num_predict: int | None = None,
     ) -> None:
         self._model_name = model_name
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.preflight_timeout_seconds = preflight_timeout_seconds
+        self.response_format = response_format
+        self.think = think
+        self.temperature = temperature
+        self.num_predict = num_predict
 
     @property
     def provider_name(self) -> str:
@@ -70,12 +78,7 @@ class OllamaProvider:
         return body
 
     def preflight(self) -> OllamaPreflight:
-        """Verify the local server and exact requested model without sending evidence.
-
-        Ollama's ``/api/tags`` endpoint contains model inventory only. No system
-        prompt, user prompt, message excerpt or other analysis context is sent by
-        this call. Missing models fail closed before ``/api/chat`` can run.
-        """
+        """Verify the local server and exact requested model without sending evidence."""
 
         request = urllib.request.Request(f"{self.base_url}/api/tags", method="GET")
         body = self._read_json(request, timeout_seconds=self.preflight_timeout_seconds)
@@ -105,15 +108,25 @@ class OllamaProvider:
         return result
 
     def analyze(self, *, system_prompt: str, user_prompt: str) -> Mapping[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model_name,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "format": "json",
+            "format": self.response_format,
             "stream": False,
         }
+        if self.think is not None:
+            payload["think"] = self.think
+        options: dict[str, Any] = {}
+        if self.temperature is not None:
+            options["temperature"] = self.temperature
+        if self.num_predict is not None:
+            options["num_predict"] = self.num_predict
+        if options:
+            payload["options"] = options
+
         request = urllib.request.Request(
             f"{self.base_url}/api/chat",
             data=json.dumps(payload).encode("utf-8"),
