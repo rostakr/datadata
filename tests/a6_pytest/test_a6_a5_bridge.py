@@ -20,14 +20,30 @@ def test_a5_available_returns_boolean():
 
 def test_run_local_a5_uses_runtime_v2_single_call_and_local_materialization(monkeypatch):
     from analyzazprav.a5_ai import providers
+    from analyzazprav.runtime import OUTPUT_SCHEMA
 
     calls: list[str] = []
 
     class FakeProvider:
-        def __init__(self, model_name, *, base_url, timeout_seconds=120.0, preflight_timeout_seconds=5.0):
+        def __init__(
+            self,
+            model_name,
+            *,
+            base_url,
+            timeout_seconds=120.0,
+            preflight_timeout_seconds=5.0,
+            response_format="json",
+            think=None,
+            temperature=None,
+            num_predict=None,
+        ):
             assert model_name == "test-model"
             assert base_url == "http://localhost:11434"
             assert timeout_seconds == 900.0
+            assert response_format == OUTPUT_SCHEMA
+            assert think is False
+            assert temperature == 0.0
+            assert num_predict == 768
             self._model_name = model_name
             calls.append("init")
 
