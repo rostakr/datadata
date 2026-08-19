@@ -15,8 +15,10 @@ from .models import (
     RuntimeValidationError,
 )
 from .service import RUNTIME_SCHEMA, analyze_packet, to_legacy_execution
+from .store import AnalysisStore, default_store_path, result_fingerprint
 
 __all__ = [
+    "AnalysisStore",
     "Claim",
     "EvidenceBudgetExceeded",
     "EvidenceItem",
@@ -31,6 +33,8 @@ __all__ = [
     "analyze_packet",
     "build_user_prompt",
     "compile_packet_to_packs",
+    "default_store_path",
     "interpret_pack",
+    "result_fingerprint",
     "to_legacy_execution",
 ]
