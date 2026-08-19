@@ -1,6 +1,6 @@
 # A0 — Stav projektu a integrační fronta
 
-Aktualizováno: 2026-08-17
+Aktualizováno: 2026-08-19
 
 Tento dokument je **operativní stav**, nikoliv druhá architektonická specifikace. Autorita projektu je `PROJECT_SPEC.md` v kořeni repozitáře.
 
@@ -87,6 +87,16 @@ Fresh i cached A5 výsledek musí mít stejný provenance kontrakt. Default priv
 
 Cestu lze změnit pomocí `ANALYZA_ZPRAV_A5_CACHE`. Cache obsahuje odvozené soukromé AI evidence/results a nesmí se commitovat ani uploadovat.
 
+### Fyzická live acceptance
+
+Pro poslední fyzické ověření existuje samostatný lokální gate `tools.a5_live_acceptance` / `make a5-accept-local`.
+
+Gate používá existující A6 packet a stejný `run_local_a5`/bounded orchestrátor jako UI, ale pro acceptance vždy nastaví `force_refresh=True`. Cache hit tedy nemůže být vydáván za skutečný modelový inference run.
+
+Po inference znovu reconciliuje materializovanou A5 message evidence proti aktuální A2 membership/source provenance. Jakýkoli `STALE`, `FAIL`, `UNVERIFIED`, nedokončený chunk nebo chybějící message evidence je fail-closed. Výstup obsahuje pouze privacy-safe agregované počty a allowlisted PASS/FAIL kategorie.
+
+Podrobný postup je v [`docs/A5_LIVE_ACCEPTANCE.md`](A5_LIVE_ACCEPTANCE.md).
+
 ## A6 — uživatelský end-to-end flow
 
 Uživatel může v lokálním Streamlit UI:
@@ -123,7 +133,7 @@ A6 neposílá osobní data do žádné cloud AI služby.
 
 ### A5 — AI analýza
 
-**IMPLEMENTED + SYNTHETICALLY VALIDATED end-to-end.** Provider, preflight, bounded context, chunking, validation, repair, cache, synthesis a evidence provenance jsou integrovány do skutečné A6 execution cesty. Poslední praktická acceptance je fyzický lokální inference run proti skutečně nainstalovanému Ollama modelu.
+**IMPLEMENTED + SYNTHETICALLY VALIDATED end-to-end.** Provider, preflight, bounded context, chunking, validation, repair, cache, synthesis a evidence provenance jsou integrovány do skutečné A6 execution cesty. Poslední praktická acceptance je fyzický lokální inference run proti skutečně nainstalovanému Ollama modelu; tento run má nyní reprodukovatelný fresh-inference gate.
 
 ### A6 — Rozhraní
 
@@ -135,11 +145,26 @@ A6 neposílá osobní data do žádné cloud AI služby.
 
 ## Aktuální integrační fronta
 
-Po sloučení chunked live-A5 implementace zbývá jediná praktická podmínka pro označení lokální aplikace za fyzicky end-to-end ověřenou:
+Po sloučení chunked live-A5 implementace a přidání fresh live-acceptance gate zbývá jediná praktická podmínka pro označení lokální aplikace za fyzicky end-to-end ověřenou:
 
-**spustit jednu skutečnou A5 analýzu přes lokální Ollama model v A6 a potvrdit `completed`/validní evidence drill-down.**
+**spustit jednu skutečnou A5 analýzu přes lokální Ollama model a získat privacy-safe `PASS` z `make a5-accept-local`.**
 
-Tato lokální acceptance nesmí uploadovat zprávy, AI cache, screenshots s osobním obsahem ani raw report. Na GitHub lze zapsat pouze privacy-safe status, model name podle potřeby, počty chunků/statusy a PASS/FAIL bez osobního obsahu.
+Postup:
+
+```bash
+make a6-launch DATABASE=/cesta/messages.sqlite
+```
+
+V A6 stáhnout lokální `a5-context.json` pro skutečně vybranou evidence a následně:
+
+```bash
+make a5-accept-local \
+  DATABASE=/cesta/messages.sqlite \
+  PACKET=/cesta/a5-context.json \
+  MODEL=qwen3:8b
+```
+
+Tato lokální acceptance nesmí uploadovat zprávy, A6 packet, AI cache, screenshots s osobním obsahem ani raw report. Na GitHub lze zapsat pouze privacy-safe status, model name podle potřeby, počty chunků/evidence a PASS/FAIL bez osobního obsahu.
 
 ## Release pravidlo A0
 
@@ -151,6 +176,8 @@ A0 nesmí obejít A7 ani raw gate. Release commit je integračně přijatelný p
 - aggregate A7 exact-SHA verdict je zelený,
 - reálná canonical/text analysis readiness nemá nevyřešenou integrity/provenance chybu,
 - známá media limitation zůstává explicitní a není zaměněna za media completeness.
+
+Fyzický `a5-accept-local` PASS je soukromá runtime acceptance nad reálným lokálním archivem; nenahrazuje CI/A7 a CI jej na veřejných syntetických datech nesmí předstírat.
 
 ## Hlavní zásada
 
