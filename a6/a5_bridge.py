@@ -123,26 +123,50 @@ def run_local_runtime(
     user_question: str | None = None,
     inference_timeout_seconds: float = 300.0,
     max_input_chars: int = 6000,
+    force_refresh: bool = False,
+    store_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run the authoritative Runtime v2 through local Ollama only.
 
     Identity/provenance and provider-size budget are validated before any message
-    text reaches the provider. Ollama receives strict JSON Schema, thinking is
-    disabled, output length is bounded, and each pack gets exactly one inference
-    call. Canonical/source evidence is materialized locally after validation.
+    text reaches the provider. Validated results are cached in the private local
+    Analysis Store using a fingerprint that includes provider-visible content and
+    the private canonical evidence mapping. A cache hit requires no provider.
+
+    Fresh inference uses strict JSON Schema, disabled thinking, bounded output and
+    exactly one model call per pack. Canonical/source evidence is materialized
+    locally after model-output validation.
     """
 
     try:
         from analyzazprav.a5_ai.providers import OllamaProvider
-        from analyzazprav.runtime import OUTPUT_SCHEMA, analyze_packet, compile_packet_to_packs
+        from analyzazprav.runtime import (
+            AnalysisStore,
+            OUTPUT_SCHEMA,
+            analyze_packet,
+            compile_packet_to_packs,
+            result_fingerprint,
+        )
     except ImportError as exc:
         raise RuntimeUnavailable("Runtime v2 není v aktuálním checkoutu nainstalovaný.") from exc
 
-    compile_packet_to_packs(
+    packs = compile_packet_to_packs(
         packet,
         question=user_question,
         max_input_chars=max_input_chars,
     )
+    cache_key = result_fingerprint(
+        packs,
+        provider="ollama",
+        model=model_name,
+    )
+    store = AnalysisStore(store_path)
+    if not force_refresh:
+        cached = store.get(cache_key)
+        if cached is not None:
+            result = dict(cached)
+            result["cache_hit"] = True
+            return result
 
     provider = OllamaProvider(
         model_name,
@@ -155,12 +179,21 @@ def run_local_runtime(
     )
     provider.preflight()
 
-    return analyze_packet(
+    result = analyze_packet(
         packet,
         provider=provider,
         question=user_question,
         max_input_chars=max_input_chars,
     )
+    store.put(
+        cache_key,
+        result,
+        provider="ollama",
+        model=model_name,
+    )
+    result = dict(result)
+    result["cache_hit"] = False
+    return result
 
 
 def run_local_a5(
@@ -178,11 +211,12 @@ def run_local_a5(
 ) -> dict[str, Any]:
     """Deprecated compatibility adapter around Runtime v2.
 
-    Historical A5-only arguments are ignored. New code must call
-    ``run_local_runtime`` directly.
+    ``analysis_type`` and ``mode`` are ignored. Historical ``force_refresh`` and
+    ``cache_path`` are mapped to the Runtime v2 Analysis Store for migration.
+    New code must call ``run_local_runtime`` directly.
     """
 
-    del analysis_type, mode, force_refresh, cache_path
+    del analysis_type, mode
     try:
         from analyzazprav.runtime import to_legacy_execution
     except ImportError as exc:
@@ -195,5 +229,7 @@ def run_local_a5(
         user_question=user_question,
         inference_timeout_seconds=inference_timeout_seconds,
         max_input_chars=max_input_chars,
+        force_refresh=force_refresh,
+        store_path=cache_path,
     )
     return to_legacy_execution(result)
