@@ -3,54 +3,60 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-import app
+from a6 import runtime_ui
+from a6.data import SourceInfo, demo_messages
 
 
-def test_source_without_launcher_database_preserves_original_selector(monkeypatch):
-    expected = ("messages", "info", "findings", None)
-    monkeypatch.setattr(app, "configured_database", lambda: None)
-    monkeypatch.setattr(app, "_ORIGINAL_SOURCE", lambda: expected)
+def test_source_without_launcher_database_preserves_interactive_demo_selector(monkeypatch):
+    class Sidebar:
+        def header(self, value):
+            assert value == "Zdroj dat"
 
-    assert app.source() == expected
-    assert app._CURRENT_DB_PATH is None
+        def radio(self, label, options, horizontal=False):
+            assert label == "Režim"
+            assert options == ["Demo", "SQLite"]
+            assert horizontal is True
+            return "Demo"
+
+    monkeypatch.setattr(runtime_ui, "configured_database", lambda: None)
+    monkeypatch.setattr(runtime_ui, "st", SimpleNamespace(sidebar=Sidebar()))
+
+    messages, info, findings, db_path = runtime_ui._source()
+
+    assert len(messages) == len(demo_messages())
+    assert info == SourceInfo("demo", "Vestavěná demo data")
+    assert findings.empty
+    assert db_path is None
 
 
 def test_source_with_launcher_database_bypasses_manual_selector(monkeypatch, tmp_path: Path):
     database = (tmp_path / "messages.sqlite").resolve()
+    expected = ("messages", "info", "findings")
     calls: list[str] = []
 
-    class Sidebar:
-        def header(self, value):
-            calls.append(f"header:{value}")
+    monkeypatch.setattr(runtime_ui, "configured_database", lambda: database)
 
-        def caption(self, value):
-            calls.append(f"caption:{value}")
+    def fake_load_db(path):
+        calls.append(path)
+        assert path == str(database)
+        return expected
 
-        def error(self, value):
-            calls.append(f"error:{value}")
-
-    monkeypatch.setattr(app, "configured_database", lambda: database)
+    monkeypatch.setattr(runtime_ui, "_load_db", fake_load_db)
     monkeypatch.setattr(
-        app,
-        "_ORIGINAL_SOURCE",
-        lambda: (_ for _ in ()).throw(AssertionError("manual selector must not run")),
-    )
-    monkeypatch.setattr(
-        app._legacy,
-        "load_db",
-        lambda path: ("messages", "info", "findings") if path == str(database) else None,
-    )
-    monkeypatch.setattr(
-        app._legacy,
+        runtime_ui,
         "st",
-        SimpleNamespace(sidebar=Sidebar(), stop=lambda: (_ for _ in ()).throw(RuntimeError("stop"))),
+        SimpleNamespace(
+            sidebar=SimpleNamespace(
+                header=lambda *_: (_ for _ in ()).throw(
+                    AssertionError("interactive source selector must not run")
+                )
+            ),
+            error=lambda value: (_ for _ in ()).throw(AssertionError(value)),
+            stop=lambda: (_ for _ in ()).throw(RuntimeError("stop")),
+        ),
     )
 
-    result = app.source()
+    result = runtime_ui._source()
 
     assert result == ("messages", "info", "findings", str(database))
-    assert app._CURRENT_DB_PATH == str(database)
-    assert calls == [
-        "header:Zdroj dat",
-        "caption:Režim: canonical SQLite (lokální launcher)",
-    ]
+    assert calls == [str(database)]

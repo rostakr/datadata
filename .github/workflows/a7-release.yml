@@ -1,4 +1,4 @@
-name: A7 current-main release gate
+name: Runtime v2 exact-SHA release gate
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ jobs:
       - name: Run complete repository suite
         run: pytest -q
       - name: Compile Python sources
-        run: python -m compileall -q src a6 app.py tools/a7_release tools/real_archive_gate.py
+        run: python -m compileall -q src a6 app.py tools
       - name: Start Streamlit smoke server
         run: |
           python -m streamlit run app.py \
@@ -51,13 +51,13 @@ jobs:
           fi
       - name: Write core report
         run: >-
-          python -c "import json,os,pathlib; pathlib.Path('a7-core-report.json').write_text(json.dumps({'schema_version':1,'module':'core','status':'PASS','verdict':'VALID','contract_sha':os.environ['GITHUB_SHA'],'checks':{'full_repository_pytest':True,'compileall':True,'streamlit_health':True},'issues':[]}, indent=2)+'\\n')"
+          python -c "import json,os,pathlib; pathlib.Path('qa-core-report.json').write_text(json.dumps({'schema_version':2,'module':'core','status':'PASS','verdict':'VALID','contract_sha':os.environ['GITHUB_SHA'],'checks':{'full_repository_pytest':True,'compileall':True,'streamlit_health':True},'issues':[]}, indent=2)+'\\n')"
       - uses: actions/upload-artifact@v4
         with:
-          name: a7-core-report
-          path: a7-core-report.json
+          name: qa-core-report
+          path: qa-core-report.json
 
-  a5-live:
+  runtime-live:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,19 +65,19 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r requirements.txt
-      - name: Run current-checkout A5 evidence/provenance probe
+      - name: Run Runtime v2 evidence/interpreter probe
         run: >-
-          python -m tools.a7_release.a5_live
-          --report a7-a5-report.json
+          python -m tools.a7_release.runtime_live
+          --report qa-runtime-report.json
           --contract-sha "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: a7-a5-report
-          path: a7-a5-report.json
+          name: qa-runtime-report
+          path: qa-runtime-report.json
           if-no-files-found: ignore
 
-  a6-live:
+  ui-live:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,21 +85,21 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r requirements.txt
-      - name: Run current-checkout A2→A6→A5 provenance fixture
+      - name: Run canonical-to-Runtime-v2 UI boundary probe
         run: >-
-          python -m tools.a7_release.a6_live
-          --report a7-a6-report.json
+          python -m tools.a7_release.ui_live
+          --report qa-ui-report.json
           --contract-sha "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: a7-a6-report
-          path: a7-a6-report.json
+          name: qa-ui-report
+          path: qa-ui-report.json
           if-no-files-found: ignore
 
   release-verdict:
     if: always()
-    needs: [core, a5-live, a6-live]
+    needs: [core, runtime-live, ui-live]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,21 +110,21 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: a7-*-report
-          path: a7-reports
+          pattern: qa-*-report
+          path: qa-reports
           merge-multiple: true
       - name: Aggregate exact-SHA verdict
         run: >-
           python -m tools.a7_release.release_verdict
-          --reports a7-reports
-          --report a7-release-verdict.json
+          --reports qa-reports
+          --report qa-release-verdict.json
           --sha "$GITHUB_SHA"
           --core-result '${{ needs.core.result }}'
-          --a5-result '${{ needs.a5-live.result }}'
-          --a6-result '${{ needs.a6-live.result }}'
+          --runtime-result '${{ needs.runtime-live.result }}'
+          --ui-result '${{ needs.ui-live.result }}'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: a7-release-verdict
-          path: a7-release-verdict.json
+          name: qa-release-verdict
+          path: qa-release-verdict.json
           if-no-files-found: ignore

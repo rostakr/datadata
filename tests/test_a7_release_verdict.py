@@ -14,8 +14,8 @@ def component(verdict="VALID", sha=SHA):
 class ReleaseVerdictTests(unittest.TestCase):
     def test_all_valid_same_sha_is_release_ready(self):
         report = aggregate_release_verdict(
-            {"core": component(), "A5": component(), "A6": component()},
-            job_results={"core": "success", "A5": "success", "A6": "success"},
+            {"core": component(), "runtime": component(), "ui": component()},
+            job_results={"core": "success", "runtime": "success", "ui": "success"},
             expected_sha=SHA,
         )
         self.assertEqual(report["overall_verdict"], "VALID")
@@ -23,18 +23,18 @@ class ReleaseVerdictTests(unittest.TestCase):
 
     def test_missing_report_is_needs_review_not_ready(self):
         report = aggregate_release_verdict(
-            {"core": component(), "A5": component(), "A6": None},
-            job_results={"core": "success", "A5": "success", "A6": "success"},
+            {"core": component(), "runtime": component(), "ui": None},
+            job_results={"core": "success", "runtime": "success", "ui": "success"},
             expected_sha=SHA,
         )
         self.assertEqual(report["overall_verdict"], "NEEDS_REVIEW")
         self.assertFalse(report["release_ready"])
-        self.assertIn("A7_COMPONENT_REPORT_MISSING", {row["code"] for row in report["issues"]})
+        self.assertIn("QA_COMPONENT_REPORT_MISSING", {row["code"] for row in report["issues"]})
 
     def test_failed_job_is_invalid(self):
         report = aggregate_release_verdict(
-            {"core": component(), "A5": component(), "A6": component()},
-            job_results={"core": "success", "A5": "failure", "A6": "success"},
+            {"core": component(), "runtime": component(), "ui": component()},
+            job_results={"core": "success", "runtime": "failure", "ui": "success"},
             expected_sha=SHA,
         )
         self.assertEqual(report["overall_verdict"], "INVALID")
@@ -42,8 +42,8 @@ class ReleaseVerdictTests(unittest.TestCase):
 
     def test_component_invalid_is_invalid(self):
         report = aggregate_release_verdict(
-            {"core": component(), "A5": component("INVALID"), "A6": component()},
-            job_results={"core": "success", "A5": "success", "A6": "success"},
+            {"core": component(), "runtime": component("INVALID"), "ui": component()},
+            job_results={"core": "success", "runtime": "success", "ui": "success"},
             expected_sha=SHA,
         )
         self.assertEqual(report["overall_verdict"], "INVALID")
@@ -51,18 +51,18 @@ class ReleaseVerdictTests(unittest.TestCase):
 
     def test_sha_mismatch_is_invalid(self):
         report = aggregate_release_verdict(
-            {"core": component(), "A5": component(sha="2" * 40), "A6": component()},
-            job_results={"core": "success", "A5": "success", "A6": "success"},
+            {"core": component(), "runtime": component(sha="2" * 40), "ui": component()},
+            job_results={"core": "success", "runtime": "success", "ui": "success"},
             expected_sha=SHA,
         )
         self.assertEqual(report["overall_verdict"], "INVALID")
         self.assertFalse(report["release_ready"])
-        self.assertIn("A7_COMPONENT_SHA_MISMATCH", {row["code"] for row in report["issues"]})
+        self.assertIn("QA_COMPONENT_SHA_MISMATCH", {row["code"] for row in report["issues"]})
 
     def test_invalid_expected_sha_never_releases(self):
         report = aggregate_release_verdict(
-            {"core": component(sha="bad"), "A5": component(sha="bad"), "A6": component(sha="bad")},
-            job_results={"core": "success", "A5": "success", "A6": "success"},
+            {"core": component(sha="bad"), "runtime": component(sha="bad"), "ui": component(sha="bad")},
+            job_results={"core": "success", "runtime": "success", "ui": "success"},
             expected_sha="bad",
         )
         self.assertEqual(report["overall_verdict"], "INVALID")

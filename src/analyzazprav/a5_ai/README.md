@@ -1,96 +1,65 @@
-# A5 selective AI analysis
+# Legacy A5 implementation — deprecated
 
-A5 is the interpretive layer of Analyzazprav. It never replaces deterministic A2–A4 processing. It receives only a bounded, relevant context and returns structured, evidence-backed interpretations.
+Tento adresář obsahuje původní A5 implementaci a během migrace Runtime v2 zůstává v repozitáři pouze kvůli regresním testům, kompatibilním adaptérům a postupnému odstranění starého kódu.
 
-## Core guarantees
+**Není to již production runtime.** Autoritativní architektura je v `PROJECT_SPEC.md` a nový interpretive runtime je v `src/analyzazprav/runtime/`.
 
-- local-first provider abstraction; Ollama is the production local implementation
-- deterministic candidate selection before AI inference
-- chronological context with physical blind-mode cutoffs
-- bounded context reduction that preserves explicit evidence
-- exactly one repair attempt after invalid model output
-- cache keyed by context, analysis type, mode, provider/model and prompt version
-- every material claim must resolve to supplied source evidence
-- invalid or duplicate evidence IDs fail closed
-- no cloud fallback
+## Co je zde historické
 
-## Evidence chain
+Původní A5 obsahuje zejména:
 
-The model is allowed to cite only existing message IDs and existing deterministic metric references. After validation, A5 enriches those references from `AnalysisContext` with the authoritative message timestamp, membership, source provenance, sender ID, safe excerpt and metric value. The model therefore cannot invent provenance metadata.
+- `ContextBuilder` s message-count limity,
+- `AIAnalyzer`,
+- modelově generovaný rozsáhlý structured result,
+- jeden automatický repair inference po validační chybě,
+- cache starého A5 kontraktu,
+- chunk orchestrator,
+- multi-chunk synthesis,
+- A2/A4/A6 integrační adaptéry.
 
-Assertion-bearing synthesis retains A6-compatible text fields with parallel source-derived evidence refs:
+Tyto komponenty se již nesmějí rozšiřovat novou produkční funkcionalitou.
 
-- `summary` + `summary_evidence`
-- `turning_points` + `turning_point_evidence`
-- `participant_p1` + `participant_p1_evidence`
-- `participant_p2` + `participant_p2_evidence`
-- `shared_dynamic` + `shared_dynamic_evidence`
+## Nová produkční cesta
 
-Ordinary analysis prompt/cache contract: `a5-v4-provenance-reduction`.
-Chunk synthesis prompt/cache contract: `a5-v1-validated-chunk-synthesis`.
+Runtime v2 používá:
 
-## A2 handoff
+`canonical data → deterministic signals → Evidence Compiler → compact Interpreter → local evidence materialization`
 
-`A2SQLiteMessageSource` reads canonical analytical views in read-only mode and provides message IDs, participant IDs, UTC timestamps, reply relations, attachment MIME types and edited/deleted flags.
+Klíčové rozdíly:
 
-## A4 v6 handoff
+- pack budget je podle skutečné velikosti provider payloadu, nikoli pevného počtu zpráv,
+- provider nevidí canonical message IDs, membership IDs ani source provenance,
+- model cituje pouze lokální `E1…En` labels,
+- canonical/source evidence materializuje host aplikace po inference,
+- Ollama dostává JSON Schema structured output,
+- u podporovaných thinking modelů produkční Runtime v2 používá non-thinking inference,
+- automatický repair inference není povolen,
+- jeden pack znamená jeden inference call,
+- multi-pack výsledek je standardně složen deterministicky bez dalšího modelového callu.
 
-The current A4 contract is used as a deterministic candidate index. A5 adapters accept:
+Nový kód:
 
-- `ConflictCandidate` → `conflict`
-- `ChangePoint` → `change_point`
-- `EngagementPeriodSignal` → `engagement_signal`
-- `DyadicRegime` → `dyadic_regime`
-- `TopicCandidate` → `lexical_topic`
-- `AnalyticMessage` → bounded A5 message context
+- `src/analyzazprav/runtime/evidence.py`
+- `src/analyzazprav/runtime/interpreter.py`
+- `src/analyzazprav/runtime/service.py`
+- `a6/a5_bridge.py::run_local_runtime`
+- `a6/runtime_ui.py`
+- `tools/runtime_live_acceptance.py`
 
-A4 metric names, directions and regime labels remain deterministic source signals; A5 does not silently reinterpret them as motives or psychological facts.
+## Co zůstává z tohoto adresáře produkčně použité
 
-For ordinary candidates, all A4 `source_message_ids` are preserved directly as A5 evidence IDs. An oversized `lexical_topic` is the one intentional structural exception: the authoritative A4 topic row and its complete `source_message_ids` remain unchanged, while `A4SQLiteCandidateSource` creates a deterministic chronological partition for A5. Each chunk contains at most 120 explicit evidence messages, keeps `candidate_type=lexical_topic`, carries stable parent/chunk metadata, and all chunks together must cover the original A4 evidence exactly once. No evidence is sampled or silently discarded, and the global `ContextBuilder.max_messages` limit is not increased.
+Dočasně zůstává `providers/` jako lokální provider abstraction. `OllamaProvider` je používán i Runtime v2, protože jde o jednoduchou HTTP hranici a není důvod ji duplikovat.
 
-The chunk size deliberately leaves room inside the 180-message A5 context budget for neighboring context around explicit evidence. `ContextBuilder` still treats every evidence ID inside an individual chunk as an absolute constraint.
+Ostatní moduly tohoto adresáře jsou považovány za legacy, dokud nebudou odstraněny nebo explicitně přesunuty do nového runtime.
 
-`A4SQLiteCandidateSource` reads the published `analysis_a4_*` SQLite views directly in read-only mode. Malformed JSON and duplicate source IDs fail closed. Missing optional views only disable that candidate type. Oversized topic chunking also fails closed if any topic evidence ID cannot be resolved to a timestamped canonical analytical message.
+## Migrační pravidlo
 
-Lexical topic candidates remain explicitly lexical (`lexical_ngram_v1`). A5 may interpret their surrounding message evidence, but the candidate itself is not promoted to semantic truth.
+Starý A5 kód lze odstranit po splnění všech podmínek:
 
-## A6 live local handoff
+1. hlavní UI používá pouze `run_local_runtime`,
+2. Runtime v2 tests a browser smoke jsou zelené,
+3. Runtime v2 live acceptance projde lokálně na reálném canonical packetu,
+4. žádný production entrypoint neimportuje starý orchestrator/analyzer/cache,
+5. potřebné provider utility jsou přesunuty nebo označeny jako sdílené.
 
-`integration_a6.py` accepts A6 `analysis_packet` schema v1. Selected message IDs become explicit manual evidence. Duplicate packet message IDs, duplicate selected IDs, mixed conversations or incomplete required provenance are rejected before provider/network work.
-
-`orchestrator.py` is the production A6 execution path:
-
-1. validate the complete A6 packet and provenance;
-2. order selected evidence chronologically;
-3. split selections larger than 120 messages into lossless chunks of at most 120 evidence messages;
-4. run each chunk through the existing `ContextBuilder(max_messages=180)`, `AIAnalyzer` and validator;
-5. stop fail-closed if any chunk fails;
-6. for multiple successful chunks, send only validated chunk-level claims plus their cited message IDs to a synthesis call;
-7. validate final synthesis citations against a local validation-only context containing only IDs already cited by validated chunk outputs;
-8. rematerialize final message evidence from canonical A6 packet data, including membership/source provenance.
-
-The synthesis provider prompt never contains the complete A6 packet or the original full/raw message context. It receives already validated model claims and evidence IDs only. The validation-only context is never serialized into the provider prompt.
-
-`a6/a5_bridge.py` performs Ollama `/api/tags` preflight once before evidence is sent to `/api/chat`. The exact requested model must already be installed locally. There is no automatic model pull and no cloud fallback.
-
-A5 results are cached in a private local SQLite cache outside the repository, defaulting to `~/.datadata/cache/a5.sqlite`. `ANALYZA_ZPRAV_A5_CACHE` may override the path. Cache hits preserve the same materialized membership/source and metric provenance as fresh results.
-
-A6 renders a privacy-safe chunk summary (`část`, evidence count, status) and then the same structured final result/evidence/source drill-down used for ordinary one-chunk analysis.
-
-## Golden deterministic E2E slice
-
-`tests/a5_ai/test_golden_e2e.py` validates one synthetic SQLite database through the full A5 integration boundary:
-
-`A4 analysis_a4_events -> A4SQLiteCandidateSource -> A2 analysis_messages -> ContextBuilder -> StaticProvider -> validated A5 result -> A6 analysis_packet candidate`
-
-The test proves that the same canonical message IDs survive from the A4 finding through source-derived A5 evidence and into the A6 handoff. It also verifies deterministic metric evidence (`conflict_score`) and source-derived sender/timestamp/excerpt data without any external AI service.
-
-`tests/a5_ai/test_a4_topic_chunking.py` verifies that oversized A4 lexical-topic evidence is chronologically partitioned without loss or duplication and that every resulting chunk stays within the bounded A5 context contract.
-
-`tests/a5_ai/test_a6_chunked_orchestrator.py` verifies the real A6 execution boundary with synthetic data: 250 selected messages become `120 + 120 + 10`, the synthesis prompt contains no original raw message text, final synthesis cannot cite an ID absent from validated chunk evidence, and a failing chunk prevents synthesis.
-
-`tests/a5_ai/test_cache_provenance.py` verifies that cache hits preserve materialized evidence provenance.
-
-## Failure isolation
-
-If the model is unavailable, times out, a chunk fails, synthesis cites invalid evidence or model JSON cannot be repaired, A5 returns an explicit failure status. A1–A4 and the non-AI parts of A6 remain usable; AI is enrichment, never a data-path dependency.
+Do té doby legacy testy mohou zůstat jako regresní ochrana canonical/evidence chování, ale jejich existence neznamená, že starý orchestrátor je production path.

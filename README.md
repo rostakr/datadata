@@ -1,73 +1,40 @@
 # Analýza zpráv
 
-Local-first pipeline pro auditovatelný import, normalizaci, deterministickou analýzu a AI interpretaci osobní komunikace.
+Local-first systém pro auditovatelnou analýzu dlouhodobé osobní komunikace.
 
-`RAW → NORMALIZED → DERIVED → ANALYTICS → RELEVANT CONTEXT → AI ANALYSIS → UI → QA`
+Hlavní architektura Runtime v2:
 
-## Autorita projektu
+`RAW → CANONICAL STORE → SIGNALS → EVIDENCE PACKS → INTERPRETER → ANALYSIS STORE → UI`
 
-Jediná autoritativní projektová a architektonická specifikace je [`PROJECT_SPEC.md`](PROJECT_SPEC.md).
+Autoritativní specifikace je [`PROJECT_SPEC.md`](PROJECT_SPEC.md).
 
-Agentní prompty jsou v [`docs/agents/`](docs/agents/). Operativní integrační stav vede A0 v [`docs/A0_STATUS.md`](docs/A0_STATUS.md). A7 release pravidla jsou v [`docs/A7_RELEASE_GATE.md`](docs/A7_RELEASE_GATE.md).
+## Proč Runtime v2
 
-Při konfliktu dokumentace má přednost `PROJECT_SPEC.md` a canonical kontrakty. Nevytvářet paralelní datový model ani druhou hlavní specifikaci.
+Původní A0–A7 implementace postupně vytvořila příliš těžký AI runtime: velké prompt kontrakty, fixní message chunky, modelově generovanou provenance strukturu, repair inference a následnou synthesis inference. Na slabším lokálním CPU to vedlo k dlouhým promptům, truncation a timeoutům.
 
-## Moduly
+Runtime v2 odděluje systémovou správnost od kvality LLM:
 
-- A0 — hlavní koordinace, architektura a integrační pořadí
-- A1 — import a source reconciliation
-- A2 — canonical SQLite, provenance a integrita
-- A3 — processing, sessions, threads a participant resolution
-- A4 — deterministická analytika
-- A5 — bounded AI context, evidence chain a interpretace
-- A6 — lokální Streamlit UI a source/evidence drill-down
-- A7 — nezávislá QA, reconciliation a exact-SHA release gates
+1. **Canonical Store** drží správná data a provenance.
+2. **Signal Engine** programově analyzuje celou historii.
+3. **Evidence Compiler** sestaví malý pack podle skutečné velikosti vstupu.
+4. **Interpreter** provede jeden krátký inference call na pack.
+5. Python validuje krátké `E1…En` reference a teprve lokálně je mapuje zpět na canonical message IDs a provenance.
 
-## Základní pravidla
+LLM nikdy nedostává source record keys, snapshot keys, membership IDs ani celý archiv.
 
-- zdrojová data jsou read-only,
-- žádný vstupní záznam se nesmí tiše ztratit,
-- všechny vrstvy používají jeden canonical model,
-- neznámá informace zůstává neznámá; nesmí být domyšlena jako jistá hodnota,
-- deterministické metriky se nepočítají pomocí AI,
-- AI dostává pouze minimální relevantní bounded context,
-- významný závěr musí být dohledatelný ke zprávám, metrikám a provenance,
-- změna není hotová bez testu/validace a bez relevantního A7 gate.
+## Historické A0–A7
 
-## Vývojové prostředí
+A0–A7 už nejsou autoritativní runtime architekturou. Během migrace slouží pouze jako mapování stávajícího kódu:
 
-Společné příkazy pro lokální vývoj, Codespaces i CI jsou v `Makefile`:
+- A1/A2 → Canonical Store,
+- A3/A4 → Signal Engine,
+- A5 → Evidence Compiler + Interpreter,
+- A6 → UI,
+- A7 → průřezové QA gates.
 
-```bash
-make setup
-make test
-make compile
-make check
-```
+Starý A5 orchestrátor zůstává dočasně v repozitáři kvůli regresním testům, ale hlavní A6 bridge používá Runtime v2.
 
-Pro kompletní vývojové prostředí včetně Playwright Chromium:
-
-```bash
-make setup-dev
-```
-
-### GitHub Codespaces
-
-`.devcontainer/devcontainer.json` připraví Python 3.11, nainstaluje vývojové závislosti, spustí `make check` a A6 viewport smoke test. Při každém startu Codespace se automaticky spustí Streamlit na portu `8501` a GitHub port otevře jako preview.
-
-Ruční příkazy v Codespace:
-
-```bash
-make check
-make ui
-make a6-smoke
-```
-
-Stejné příkazy jsou dostupné také jako VS Code Tasks.
-
-**Codespaces je vývojové a QA prostředí, ne úložiště skutečného osobního archivu.** Do Codespaces ani do repozitáře nenahrávat skutečný `chat.db`, osobní zprávy, přílohy ani soukromý canonical `messages.sqlite`. Reálný archiv se zpracovává pouze na důvěryhodném lokálním stroji.
-
-## Nejjednodušší lokální spuštění
+## Lokální spuštění
 
 Pokud už existuje canonical `messages.sqlite`:
 
@@ -75,7 +42,7 @@ Pokud už existuje canonical `messages.sqlite`:
 python -m tools.local_app --database /cesta/messages.sqlite
 ```
 
-nebo přes společný příkaz:
+nebo:
 
 ```bash
 make a6-launch DATABASE=/cesta/messages.sqlite
@@ -89,101 +56,94 @@ python -m tools.local_app \
   --target EXACT_TARGET
 ```
 
-`EXACT_TARGET` musí být přesná canonical/source identita; fuzzy výběr se nepoužívá. Alternativně lze zadat autoritativní lokální ID:
+RAW archiv zůstává read-only a odvozená data vznikají mimo repozitář v `~/.datadata/runs/`, pokud není explicitně zvoleno jiné lokální umístění.
 
-```bash
-python -m tools.local_app \
-  --chat-db /cesta/k/chat.db \
-  --conversation-id CANONICAL_CONVERSATION_ID
+## Runtime v2 AI flow
+
+Uživatel v UI vybere signál/segment nebo konkrétní zprávy. A6 připraví lokální packet, Runtime v2 jej okamžitě zredukuje na evidence pack a provider dostane pouze například:
+
+```json
+{
+  "evidence": [
+    {"label":"E1","sender":"P1","timestamp":"...","text":"..."},
+    {"label":"E2","sender":"P2","timestamp":"...","text":"..."}
+  ],
+  "question":"..."
+}
 ```
 
-Launcher pouze skládá existující `tools.real_archive_gate` a A6. RAW archiv zůstává **read-only**. Pokud není uveden `--workdir`, odvozená data vzniknou mimo repozitář v adresáři `~/.datadata/runs/`.
+Model vrací pouze:
 
-Verdict `INVALID` UI nespustí. Stav `NEEDS_REVIEW` lze otevřít pouze jako explicitní lokální kontrolu; samotným otevřením se verdict nemění na `VALID`.
+```json
+{
+  "summary": "...",
+  "claims": [
+    {
+      "kind": "observation",
+      "text": "...",
+      "evidence": ["E1", "E2"],
+      "confidence": "medium"
+    }
+  ]
+}
+```
 
-Pro vývoj lze A6 spustit také samostatně:
+Potom host aplikace:
+
+- odmítne neznámé nebo duplicitní evidence labely,
+- mapuje `E1…En` zpět na canonical message IDs,
+- lokálně materializuje membership/source provenance,
+- umožní evidence drill-down v UI.
+
+Automatický repair inference není součástí Runtime v2. Neplatný modelový výstup failne rychle a explicitně.
+
+## Evidence budget
+
+Runtime v2 nepoužívá pevné pravidlo „120 evidence / 180 context zpráv“. Pack je omezen skutečnou velikostí serializovaného provider vstupu (`max_input_chars`).
+
+Pokud se selected evidence nevejde:
+
+- selected zprávy se deterministicky rozdělí,
+- každá selected zpráva patří právě do jednoho packu,
+- pouze ne-selected okolní kontext se doplňuje, když se do budgetu vejde,
+- canonical identita a provenance se do provider payloadu neposílají.
+
+## Lokální model
+
+Správnost systému nesmí záviset na velkém modelu. Pro starší CPU je vhodný malý lokální model; větší model je volitelná kvalitativní nadstavba.
+
+Ollama musí běžet lokálně a model musí být nainstalovaný před spuštěním. Není žádný cloud fallback.
+
+## Vývoj
 
 ```bash
+make setup
+make test
+make compile
+make check
+```
+
+Pro vývoj včetně UI:
+
+```bash
+make setup-dev
 make ui
 ```
 
-nebo přímo:
-
-```bash
-streamlit run app.py
-```
-
-## Lokální AI přes Ollama
-
-A6 obsahuje skutečné lokální A5 spuštění v záložce **Analýza**. Nejprve vyberte zprávy ručně nebo použijte evidence A4 nálezu / lexikálního tématu. Potom zvolte lokální Ollama model a spusťte **Spustit A5 lokálně přes Ollama**.
-
-Ollama musí běžet lokálně na zadané URL a zvolený model musí být předem nainstalovaný. A6 před odesláním evidence provede `/api/tags` preflight. Model se automaticky nestahuje a neexistuje cloud fallback.
-
-A5 nikdy neposílá celý archiv do jednoho modelového promptu:
-
-- explicitní evidence je chronologicky dělena po maximálně `120` zprávách,
-- každý chunk používá maximálně `180` message context,
-- všechny chunky dohromady zachovají původní selected evidence právě jednou,
-- chyba kteréhokoli chunku zastaví analýzu fail-closed,
-- více validních chunků se syntetizuje pouze z již validovaných dílčích závěrů a jejich message IDs,
-- kompletní/raw message context se do syntézního promptu neposílá,
-- finální evidence se znovu validuje a materializuje z canonical dat a provenance.
-
-Výsledek se zobrazuje ve stejném A6 UI jako strukturované pozorování, interpretace, vzorce, alternativní vysvětlení a nejistoty s evidence/source drill-downem. U vícedílné analýzy UI navíc zobrazí privacy-safe počet částí, počet evidence zpráv a stav každé části.
-
-Lokální výsledky se cachují mimo repozitář v `~/.datadata/cache/a5.sqlite`. Cestu lze přepsat proměnnou `ANALYZA_ZPRAV_A5_CACHE`.
-
-Podrobný A5 kontrakt: [`src/analyzazprav/a5_ai/README.md`](src/analyzazprav/a5_ai/README.md).
-
-## Reálný Apple Messages archiv
-
-Kompletní read-only gate bez automatického spuštění UI lze spustit samostatně:
-
-```bash
-python -m tools.real_archive_gate \
-  --chat-db /cesta/k/chat.db \
-  --workdir /cesta/k/novemu-prazdnemu-workdir \
-  --target EXACT_TARGET
-```
-
-Stejný lokální gate je dostupný přes `Makefile`:
-
-```bash
-make a6-gate-local \
-  CHAT_DB=/cesta/k/chat.db \
-  WORKDIR=/cesta/k/novemu-prazdnemu-workdir \
-  TARGET=EXACT_TARGET
-```
-
-A gate + následné lokální A6 UI:
-
-```bash
-make a6-launch-archive-local \
-  CHAT_DB=/cesta/k/chat.db \
-  TARGET=EXACT_TARGET
-```
-
-Tyto `*-local` targety úmyslně odmítnou běh uvnitř GitHub Codespaces.
-
-`EXACT_TARGET` nahraďte pouze přesnou canonical/source identitou z lokálního archivu. Resolver nikdy fuzzy nevybere conversation. Pokud target není přesná canonical/source identita, další běh se provede s explicitním `CONVERSATION_ID` / `--conversation-id`.
-
-Podrobný kontrakt: [`docs/A0_REAL_ARCHIVE_GATE.md`](docs/A0_REAL_ARCHIVE_GATE.md).
-
-## CI pro A6
-
-Workflow `.github/workflows/a6-tests.yml` používá stejné příkazy jako Codespaces:
-
-```bash
-make check
-make a6-smoke
-```
-
-Navíc validuje JSON konfiguraci Codespaces/VS Code a ukládá viewport evidence jako GitHub Actions artifact.
+Skutečný osobní archiv se nezpracovává v GitHub Codespaces ani v CI.
 
 ## Soukromí
 
-Repozitář `rostakr/datadata` je veřejný. Nikdy sem necommitovat skutečný `chat.db`, osobní zprávy, soukromé přílohy, lokální real-archive reporty, secrets ani jiné osobní zdrojové artefakty.
+Repozitář `rostakr/datadata` je veřejný. Nikdy sem necommitovat:
+
+- skutečný `chat.db`,
+- osobní zprávy,
+- přílohy,
+- reálné evidence packy,
+- lokální archive/report databáze,
+- source provenance identifikátory z reálného archivu,
+- secrets.
 
 ## Hlavní zásada
 
-**Nejdříve správná data. Potom správné metriky. Až potom AI interpretace.**
+**Celý archiv zpracuje program. AI dostane jen malý důkazní balíček a pouze jej interpretuje.**

@@ -1,115 +1,133 @@
-# A5 — fyzická lokální Ollama acceptance
+# Runtime v2 — fyzická lokální Ollama acceptance
 
-Tento postup uzavírá poslední praktickou podmínku A0 po syntetickém ověření A5/A6: jeden skutečný lokální inference run nad reálným canonical A6 packetem s následnou kontrolou evidence provenance.
+Tento dokument nahrazuje původní A5 chunk/repair/synthesis acceptance.
 
-Nejde o nový analytický engine ani paralelní A5 cestu. Nástroj používá existující `a6.a5_bridge.run_local_a5`, stejný bounded/chunked orchestrátor a stejné A5 evidence kontrakty jako A6 UI.
+Runtime v2 ověřuje jednu jednoduchou fyzickou cestu:
 
-## Co acceptance dokazuje
+`canonical packet → budgeted evidence pack → local Ollama → E-label validation → local canonical/provenance materialization → reconciliation`
+
+Starý A5 orchestrátor může během migrace zůstat v repozitáři kvůli regresním testům, ale tento gate jej nepoužívá.
+
+## Co `PASS` dokazuje
 
 Úspěšný verdict `PASS` znamená současně:
 
-- Ollama model skutečně provedl fresh inference; acceptance vždy používá `force_refresh=True`, takže cache hit nemůže nahradit fyzický modelový run,
-- A5 execution skončil `completed`,
-- všechny bounded chunky skončily `completed`,
-- assertion-bearing výsledek obsahuje materializovanou message evidence,
-- A5 evidence snapshot se proti aktuální A2 membership/source provenance reconciliuje pouze jako `PASS`,
-- případná chunk synthesis proběhla přes existující validovaný A5 orchestrátor.
+- vstupní packet má validní canonical identity a požadovanou source provenance,
+- Evidence Compiler sestavil jeden nebo více packů bez překročení input budgetu,
+- provider payload neobsahuje canonical message IDs, membership IDs ani source provenance,
+- lokální Ollama model provedl skutečný inference request,
+- modelový výstup prošel Runtime v2 contract validací,
+- všechny evidence labely existují v příslušném lokálním packu,
+- canonical evidence refs byly materializovány host aplikací až po inference,
+- každá materializovaná claim evidence se proti aktuální canonical membership/source provenance reconciliuje jako `PASS`.
 
-`STALE`, `FAIL`, `UNVERIFIED`, nedokončený chunk nebo chybějící materializovaná evidence jsou fail-closed.
+Neplatný modelový výstup, timeout, chybějící evidence nebo jiný reconciliation status failne explicitně.
+
+## Co bylo odstraněno
+
+Runtime v2 acceptance nemá:
+
+- automatický repair inference,
+- fixní 120-message chunky,
+- 180-message context limit,
+- AI generované canonical/provenance objekty,
+- povinnou AI synthesis nad chunky,
+- závislost na jednom velkém modelu.
+
+Jeden pack = jeden krátký modelový call.
 
 ## Soukromí
 
 Acceptance se smí spouštět pouze na důvěryhodném lokálním stroji.
 
-Vstupy jsou soukromé:
+Soukromé vstupy:
 
 - canonical `messages.sqlite`,
-- A6 `a5-context.json`, který může obsahovat text zpráv, message IDs a source provenance,
-- lokální A5 cache.
+- lokální analysis packet obsahující text zpráv a provenance.
 
-Tyto soubory se nesmí commitovat, uploadovat do GitHubu ani přesouvat do Codespaces. `make a5-accept-local` i samotný CLI nástroj odmítnou běh při nastaveném `$CODESPACES`.
+Tyto soubory se nesmí commitovat, uploadovat do GitHubu ani přesouvat do Codespaces.
 
-Výstup acceptance je naopak záměrně privacy-safe. Obsahuje pouze:
+Provider je lokální Ollama bez cloud fallbacku. Do modelového promptu se navíc neposílají source record/snapshot keys ani canonical membership/message IDs. Ty zůstávají v lokální mapě Evidence Compileru.
+
+Výstup acceptance je privacy-safe a obsahuje pouze:
 
 - schema/verdict,
-- `provider=ollama`,
-- zvolený model,
-- počty selected/chunk/evidence položek,
+- provider/model,
+- počty selected zpráv, packů, claims a evidence zpráv,
 - agregované reconciliation status counts,
-- allowlisted failure kategorie.
+- allowlisted failure reasons.
 
-Neobsahuje message text, message/conversation/membership/source IDs, lokální paths, context hash ani modelový obsah.
+## Spuštění
 
-## Příprava packetu
-
-Spusťte A6 nad canonical databází:
+Ollama musí běžet a zvolený model musí být předem nainstalovaný.
 
 ```bash
-make a6-launch DATABASE=/cesta/messages.sqlite
+make runtime-accept-local \
+  DATABASE=/cesta/messages.sqlite \
+  PACKET=/cesta/a5-context.json \
+  MODEL=qwen3:1.7b
 ```
 
-V A6 vyberte evidence zprávy ručně nebo z A4 nálezu / lexikálního tématu. V záložce **Analýza** stáhněte již existující export **A5 kontext** jako `a5-context.json`.
-
-Soubor zůstává pouze lokálně.
-
-## Fresh live acceptance
-
-Ollama musí běžet lokálně a model musí být již nainstalovaný. Potom spusťte:
+Dočasný kompatibilní alias:
 
 ```bash
 make a5-accept-local \
   DATABASE=/cesta/messages.sqlite \
   PACKET=/cesta/a5-context.json \
-  MODEL=qwen3:8b
+  MODEL=qwen3:1.7b
 ```
 
-Volitelně lze změnit:
+Oba příkazy spouštějí **Runtime v2**, nikoli deprecated A5 orchestrátor.
+
+Volitelné nastavení:
 
 ```bash
+RUNTIME_TIMEOUT_SECONDS=300
+RUNTIME_MAX_INPUT_CHARS=6000
 OLLAMA_URL=http://localhost:11434
-A5_ANALYSIS_TYPE=segment
-A5_MODE=blind
-A5_TIMEOUT_SECONDS=120
 ```
-
-`A5_TIMEOUT_SECONDS` je timeout jednoho lokálního Ollama `/api/chat` inference requestu. Výchozí hodnota zůstává `120` sekund. Na pomalejším CPU-only stroji lze použít například:
-
-```bash
-make a5-accept-local \
-  DATABASE=/cesta/messages.sqlite \
-  PACKET=/cesta/a5-context.json \
-  MODEL=qwen3:8b \
-  A5_TIMEOUT_SECONDS=900
-```
-
-Delší timeout nemění evidence/provenance pravidla ani fail-closed acceptance kontrakt; pouze dává lokálnímu modelu více času na dokončení stejného inference requestu.
 
 Přímý CLI ekvivalent:
 
 ```bash
-python -m tools.a5_live_acceptance \
+python -m tools.runtime_live_acceptance \
   --database /cesta/messages.sqlite \
   --packet /cesta/a5-context.json \
-  --model qwen3:8b \
-  --timeout-seconds 900
+  --model qwen3:1.7b \
+  --timeout-seconds 300 \
+  --max-input-chars 6000
 ```
 
 ## Výsledek
 
-Úspěšný běh skončí exit code `0` a jedním JSON objektem s `"verdict":"PASS"`.
+Úspěšný běh:
 
-Neúspěšný běh skončí nenulovým exit code a privacy-safe `FAIL`. Typické kategorie:
+```json
+{
+  "verdict": "PASS"
+}
+```
 
-- `PACKET_LOAD_FAILED`,
-- `PACKET_PROVENANCE_INVALID`,
-- `LIVE_EXECUTION_FAILED`,
-- `PROVENANCE_LOOKUP_FAILED`,
+s exit code `0`.
+
+Typické privacy-safe failure kategorie:
+
+- `PACKET_INVALID`,
+- `PROVIDER_PREFLIGHT_TIMEOUT`,
+- `PROVIDER_UNAVAILABLE`,
+- `INFERENCE_TIMEOUT`,
+- `PROVIDER_ERROR`,
+- `MODEL_OUTPUT_INVALID`,
+- `CLAIMS_MISSING`,
+- `CANONICAL_READ_FAILED`,
+- `EVIDENCE_RECONCILIATION_FAILED`,
 - `EVIDENCE_RECONCILIATION_NOT_PASS`,
-- `CHUNK_NOT_COMPLETED`,
 - `MESSAGE_EVIDENCE_MISSING`.
 
-CLI úmyslně nevypisuje raw exception detail, protože ten může obsahovat soukromý lokální kontext. Při debugování používejte lokální A6/Ollama logy a nic z nich nepublikujte bez sanitizace.
+Raw exception detail ani soukromé IDs se do acceptance reportu nevypisují.
 
-## A0 completion rule
+## Release pravidlo
 
-Po prvním fyzickém `PASS` lze do veřejného A0 statusu zaznamenat pouze privacy-safe fakt, že live acceptance proběhla, případně název modelu a agregované počty chunků/evidence. Samotný A6 packet, modelový výstup, cache, IDs ani lokální report obsahující osobní data se do repozitáře neukládají.
+Fyzický lokální modelový smoke test je pouze Interpreter contract gate. Canonical/Signal correctness se ověřuje odděleně deterministickými testy a real-archive gates.
+
+To znamená, že timeout konkrétního modelu nesmí zneplatnit správně importovaný archiv ani deterministické metriky. Pro release je požadována funkční malá lokální inference cesta na podporovaném lokálním modelu, nikoli úspěch obřího promptu na konkrétním 8B modelu.

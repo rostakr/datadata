@@ -116,22 +116,22 @@ def test_streamlit_app_renders_demo_workflow_without_exception():
     app.run()
     assert not app.exception
     assert app.title[0].value == "Analýza zpráv"
-    assert len(app.tabs) == 7
-    assert [tab.label for tab in app.tabs] == [
-        "Konverzace",
-        "Časová osa",
-        "Grafy",
-        "Významná období",
-        "Lexikální témata",
-        "Vybrané zprávy",
-        "Analýza",
-    ]
+    assert [tab.label for tab in app.tabs] == ["Konverzace", "Signály", "Interpretace"]
     assert app.sidebar.radio[0].value == "Demo"
-    assert app.sidebar.selectbox[0].label == "Kontakt"
+    assert app.sidebar.selectbox[0].label == "Konverzace"
     assert app.sidebar.date_input[0].label == "Období"
+    metrics = {item.label: item.value for item in app.metric}
+    assert set(metrics) == {
+        "Memberships",
+        "Canonical zprávy",
+        "Aktivní dny",
+        "Odesílatelé",
+        "Medián změny odesílatele",
+        "Signály",
+    }
 
 
-def test_streamlit_app_renders_a2_a4_sqlite_pipeline_without_exception(tmp_path):
+def test_streamlit_app_renders_canonical_signal_pipeline_without_exception(tmp_path):
     db_path = tmp_path / "pipeline.sqlite"
     _pipeline_fixture(db_path)
     app = AppTest.from_file(APP_PATH, default_timeout=10)
@@ -142,13 +142,12 @@ def test_streamlit_app_renders_a2_a4_sqlite_pipeline_without_exception(tmp_path)
 
     assert not app.exception
     assert app.sidebar.radio[0].value == "SQLite"
-    assert app.sidebar.selectbox[0].label == "Kontakt"
-    assert app.sidebar.selectbox[0].value == "Pipeline kontakt"
-    assert app.sidebar.checkbox[0].value is True
+    assert app.sidebar.selectbox[0].label == "Konverzace"
+    assert str(app.sidebar.selectbox[0].value) == "42"
     metrics = {item.label: item.value for item in app.metric}
     assert metrics["Memberships"] == "4"
     assert metrics["Canonical zprávy"] == "4"
-    assert metrics["Bez času"] == "1"
-    assert metrics["A4 nálezy"] == "1"
-    assert [tab.label for tab in app.tabs][4] == "Lexikální témata"
-    assert any(selectbox.label == "Lexikální téma" for selectbox in app.selectbox)
+    assert metrics["Odesílatelé"] == "2"
+    assert metrics["Signály"] == "1"
+    assert [tab.label for tab in app.tabs] == ["Konverzace", "Signály", "Interpretace"]
+    assert any(selectbox.label == "Signál pro interpretaci" for selectbox in app.selectbox)

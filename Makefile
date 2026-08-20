@@ -5,11 +5,10 @@ STREAMLIT_PORT ?= 8501
 SMOKE_PORT ?= 8765
 SMOKE_OUTPUT ?= artifacts/a6-viewport-smoke
 OLLAMA_URL ?= http://localhost:11434
-A5_ANALYSIS_TYPE ?= segment
-A5_MODE ?= blind
-A5_TIMEOUT_SECONDS ?= 120
+RUNTIME_TIMEOUT_SECONDS ?= 300
+RUNTIME_MAX_INPUT_CHARS ?= 6000
 
-.PHONY: setup setup-dev test compile check ui a6-smoke a5-accept-local a6-launch a6-gate-local a6-launch-archive-local
+.PHONY: setup setup-dev test compile check ui a6-smoke runtime-accept-local a5-accept-local a6-launch a6-gate-local a6-launch-archive-local
 
 setup:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -54,19 +53,22 @@ a6-smoke:
 		cat /tmp/datadata-a6-smoke.log; exit 1; \
 	fi
 
-a5-accept-local:
-	@if [ -n "$$CODESPACES" ]; then echo "Refusing real A5 acceptance in Codespaces; run this target on the trusted local machine." >&2; exit 2; fi
+runtime-accept-local:
+	@if [ -n "$$CODESPACES" ]; then echo "Refusing real Runtime v2 acceptance in Codespaces; run this target on the trusted local machine." >&2; exit 2; fi
 	@test -n "$(DATABASE)" || (echo "DATABASE=/path/to/messages.sqlite is required" >&2; exit 2)
 	@test -n "$(PACKET)" || (echo "PACKET=/path/to/a5-context.json is required" >&2; exit 2)
 	@test -n "$(MODEL)" || (echo "MODEL=installed-ollama-model is required" >&2; exit 2)
-	$(PYTHON) -m tools.a5_live_acceptance \
+	$(PYTHON) -m tools.runtime_live_acceptance \
 		--database "$(DATABASE)" \
 		--packet "$(PACKET)" \
 		--model "$(MODEL)" \
 		--base-url "$(OLLAMA_URL)" \
-		--timeout-seconds "$(A5_TIMEOUT_SECONDS)" \
-		--analysis-type "$(A5_ANALYSIS_TYPE)" \
-		--mode "$(A5_MODE)"
+		--timeout-seconds "$(RUNTIME_TIMEOUT_SECONDS)" \
+		--max-input-chars "$(RUNTIME_MAX_INPUT_CHARS)"
+
+# Temporary compatibility alias. It intentionally runs Runtime v2, not the
+# deprecated A5 chunk/repair/synthesis acceptance.
+a5-accept-local: runtime-accept-local
 
 a6-launch:
 	@test -n "$(DATABASE)" || (echo "DATABASE=/path/to/messages.sqlite is required" >&2; exit 2)

@@ -13,13 +13,9 @@ def test_viewport_matrix_covers_desktop_and_iphone_orientations():
     assert cases["iphone-landscape"][0] > cases["iphone-landscape"][1]
 
 
-def test_viewport_smoke_requires_all_primary_a6_tabs():
+def test_viewport_smoke_requires_runtime_v2_primary_tabs():
     assert EXPECTED_TABS == [
         "Konverzace",
-        "Časová osa",
-        "Grafy",
-        "Významná období",
-        "Lexikální témata",
-        "Vybrané zprávy",
-        "Analýza",
+        "Signály",
+        "Interpretace",
     ]
