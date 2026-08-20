@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from tools.a7_release.common import write_report
 
 _SHA = re.compile(r"^[0-9a-f]{40}$")
-_COMPONENTS = ("core", "A5", "A6")
+_COMPONENTS = ("core", "runtime", "ui")
 
 
 def _read(path: Path) -> dict[str, Any] | None:
@@ -31,7 +31,7 @@ def aggregate_release_verdict(
     if not _SHA.fullmatch(expected_sha):
         issues.append({
             "severity": "ERROR",
-            "code": "A7_EXPECTED_SHA_INVALID",
+            "code": "QA_EXPECTED_SHA_INVALID",
             "detail": "Expected release contract SHA is not a 40-character lowercase git SHA.",
         })
 
@@ -42,7 +42,7 @@ def aggregate_release_verdict(
             components[name] = "INVALID"
             issues.append({
                 "severity": "ERROR",
-                "code": "A7_COMPONENT_JOB_FAILED",
+                "code": "QA_COMPONENT_JOB_FAILED",
                 "detail": f"{name} workflow job result is {job!r}, expected 'success'.",
             })
             continue
@@ -51,7 +51,7 @@ def aggregate_release_verdict(
             observed_contracts[name] = None
             issues.append({
                 "severity": "WARNING",
-                "code": "A7_COMPONENT_REPORT_MISSING",
+                "code": "QA_COMPONENT_REPORT_MISSING",
                 "detail": f"{name} job succeeded but its report artifact is missing.",
             })
             continue
@@ -64,25 +64,25 @@ def aggregate_release_verdict(
             components[name] = "INVALID"
             issues.append({
                 "severity": "ERROR",
-                "code": "A7_COMPONENT_SHA_MISMATCH",
+                "code": "QA_COMPONENT_SHA_MISMATCH",
                 "detail": f"{name} report SHA {observed!r} != tested SHA {expected_sha!r}.",
             })
         if verdict == "INVALID":
             issues.append({
                 "severity": "ERROR",
-                "code": "A7_COMPONENT_INVALID",
-                "detail": f"{name} live/current-main validator returned INVALID.",
+                "code": "QA_COMPONENT_INVALID",
+                "detail": f"{name} current-checkout validator returned INVALID.",
             })
         elif verdict == "NEEDS_REVIEW":
             issues.append({
                 "severity": "WARNING",
-                "code": "A7_COMPONENT_NEEDS_REVIEW",
-                "detail": f"{name} live/current-main validator requires review.",
+                "code": "QA_COMPONENT_NEEDS_REVIEW",
+                "detail": f"{name} current-checkout validator requires review.",
             })
         elif verdict != "VALID":
             issues.append({
                 "severity": "ERROR",
-                "code": "A7_COMPONENT_VERDICT_UNKNOWN",
+                "code": "QA_COMPONENT_VERDICT_UNKNOWN",
                 "detail": f"{name} returned unsupported verdict {verdict!r}.",
             })
 
@@ -94,9 +94,9 @@ def aggregate_release_verdict(
         overall = "VALID"
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "scope": (
-            "exact current-checkout synthetic A1-A7 integration gate; "
+            "exact current-checkout synthetic Runtime v2 integration gate; "
             "not proof that an arbitrary real user archive or every Apple Messages schema variant has been validated"
         ),
         "tested_sha": expected_sha,
@@ -104,32 +104,34 @@ def aggregate_release_verdict(
         "components": components,
         "issues": issues,
         "overall_verdict": overall,
-        "release_ready": overall == "VALID" and all(components.get(name) == "VALID" for name in _COMPONENTS),
+        "release_ready": overall == "VALID" and all(
+            components.get(name) == "VALID" for name in _COMPONENTS
+        ),
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--reports", default="a7-reports")
+    parser.add_argument("--reports", default="qa-reports")
     parser.add_argument("--report", required=True)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--core-result", default="success")
-    parser.add_argument("--a5-result", default="success")
-    parser.add_argument("--a6-result", default="success")
+    parser.add_argument("--runtime-result", default="success")
+    parser.add_argument("--ui-result", default="success")
     args = parser.parse_args()
 
     root = Path(args.reports)
     reports = {
-        "core": _read(root / "a7-core-report.json"),
-        "A5": _read(root / "a7-a5-report.json"),
-        "A6": _read(root / "a7-a6-report.json"),
+        "core": _read(root / "qa-core-report.json"),
+        "runtime": _read(root / "qa-runtime-report.json"),
+        "ui": _read(root / "qa-ui-report.json"),
     }
     report = aggregate_release_verdict(
         reports,
         job_results={
             "core": args.core_result,
-            "A5": args.a5_result,
-            "A6": args.a6_result,
+            "runtime": args.runtime_result,
+            "ui": args.ui_result,
         },
         expected_sha=args.sha,
     )
